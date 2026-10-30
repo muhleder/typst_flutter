@@ -277,6 +277,7 @@ impl SimpleWorld {
         }
     }
 
+    #[cfg_attr(target_family = "wasm", allow(dead_code))]
     pub(crate) fn pre_resolve_packages(&mut self) -> Result<(), TypstCompileError> {
         let source_text = self.source.text().to_string();
         let files = self.vfs.files().clone();
@@ -362,10 +363,17 @@ impl typst::World for SimpleWorld {
 
     fn today(&self, offset: Option<Duration>) -> Option<Datetime> {
         let base_timestamp = self.sys_time.unwrap_or_else(|| {
-            std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .unwrap()
-                .as_secs() as i64
+            #[cfg(not(target_family = "wasm"))]
+            {
+                std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .unwrap()
+                    .as_secs() as i64
+            }
+            #[cfg(target_family = "wasm")]
+            {
+                (js_sys::Date::now() / 1000.0) as i64
+            }
         });
 
         let offset_secs = offset.map(|d| d.seconds() as i64).unwrap_or(0);

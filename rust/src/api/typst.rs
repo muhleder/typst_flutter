@@ -194,6 +194,9 @@ impl TypstEngine {
         self.world.set_allow_packages(allow_packages);
 
         // Pre-resolve any packages referenced in the source / files.
+        // On web the resolver cannot fetch during compilation; the Dart side
+        // injects archives beforehand via `add_package_archives`.
+        #[cfg(not(target_family = "wasm"))]
         if allow_packages {
             self.world.pre_resolve_packages()?;
         }

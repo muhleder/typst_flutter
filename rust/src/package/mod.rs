@@ -17,9 +17,16 @@ pub(crate) enum PackageError {
     #[error("package resolution is disabled; cannot download {0}")]
     Disabled(PackageSpec),
 
+    // Only constructed on web (the native path downloads instead); the message
+    // is still part of the native API surface and is covered by a unit test.
+    #[cfg_attr(not(target_family = "wasm"), allow(dead_code))]
+    #[error("package {0} is not available locally; the caller must prefetch it (web builds cannot download packages during compilation)")]
+    NotPrefetched(PackageSpec),
+
     #[error("unsupported package namespace '{0}' (only '@preview' is supported)")]
     UnsupportedNamespace(String),
 
+    #[cfg(not(target_family = "wasm"))]
     #[error("failed to download package {spec} from {url}: {source}")]
     Download {
         spec: PackageSpec,
@@ -28,6 +35,7 @@ pub(crate) enum PackageError {
         source: Box<ureq::Error>,
     },
 
+    #[cfg(not(target_family = "wasm"))]
     #[error("failed to read package {spec} body: {source}")]
     ReadBody {
         spec: PackageSpec,
@@ -73,6 +81,8 @@ pub(crate) struct PackageResolver {
     /// Whether to allow downloading packages from the registry.
     pub(crate) allow_packages: bool,
     /// Base URL for the package registry.
+    // Only consulted by the native download path.
+    #[cfg_attr(target_family = "wasm", allow(dead_code))]
     pub(crate) base_url: Option<String>,
 }
 
@@ -119,42 +129,50 @@ impl PackageResolver {
             return Err(PackageError::UnsupportedNamespace(spec.namespace.to_string()).into());
         }
 
-        let env_url = std::env::var("TYPST_PACKAGE_URL").ok();
-        let base_url = self
-            .base_url
-            .as_deref()
-            .or(env_url.as_deref())
-            .unwrap_or("https://packages.typst.org");
-        let url = format!(
-            "{}/{}/{}-{}.tar.gz",
-            base_url, spec.namespace, spec.name, spec.version
-        );
+        // Web cannot fetch during compilation: the caller injects archives via
+        // `insert_package_archive`, so an uncached spec is a caller error.
+        #[cfg(target_family = "wasm")]
+        return Err(PackageError::NotPrefetched(spec.clone()).into());
 
-        // Download the archive
-        let response = ureq::get(&url).call().map_err(|e| PackageError::Download {
-            spec: spec.clone(),
-            url: url.clone(),
-            source: Box::new(e),
-        })?;
+        #[cfg(not(target_family = "wasm"))]
+        {
+            let env_url = std::env::var("TYPST_PACKAGE_URL").ok();
+            let base_url = self
+                .base_url
+                .as_deref()
+                .or(env_url.as_deref())
+                .unwrap_or("https://packages.typst.org");
+            let url = format!(
+                "{}/{}/{}-{}.tar.gz",
+                base_url, spec.namespace, spec.name, spec.version
+            );
 
-        let mut compressed = Vec::new();
-        response
-            .into_body()
-            .as_reader()
-            .read_to_end(&mut compressed)
-            .map_err(|e| PackageError::ReadBody {
+            // Download the archive
+            let response = ureq::get(&url).call().map_err(|e| PackageError::Download {
                 spec: spec.clone(),
-                source: e,
+                url: url.clone(),
+                source: Box::new(e),
             })?;
 
-        let files = Self::unpack_package_archive(&compressed, spec)?;
+            let mut compressed = Vec::new();
+            response
+                .into_body()
+                .as_reader()
+                .read_to_end(&mut compressed)
+                .map_err(|e| PackageError::ReadBody {
+                    spec: spec.clone(),
+                    source: e,
+                })?;
 
-        let mut cache = self
-            .cache
-            .write()
-            .map_err(|e| PackageError::Lock(e.to_string()))?;
-        cache.insert(spec.clone(), files.clone());
-        Ok(files)
+            let files = Self::unpack_package_archive(&compressed, spec)?;
+
+            let mut cache = self
+                .cache
+                .write()
+                .map_err(|e| PackageError::Lock(e.to_string()))?;
+            cache.insert(spec.clone(), files.clone());
+            Ok(files)
+        }
     }
 
     /// Downloads and caches a Typst package from the official registry.
@@ -169,6 +187,8 @@ impl PackageResolver {
     }
 
     /// Decompresses and extracts a package tar.gz archive in memory.
+    // Also used on web, by the caller-side archive injection path.
+    #[cfg_attr(target_family = "wasm", allow(dead_code))]
     pub(crate) fn unpack_package_archive(
         compressed: &[u8],
         spec: &PackageSpec,
@@ -275,6 +295,7 @@ impl PackageResolver {
 
     /// Scans the main source (and any included .typ files in the VFS) for
     /// package import patterns and pre-downloads them.
+    #[cfg_attr(target_family = "wasm", allow(dead_code))]
     pub(crate) fn pre_resolve_packages(
         &mut self,
         source_text: &str,
@@ -459,6 +480,28 @@ mod tests {
             &mut specs,
         );
         assert!(specs.is_empty());
+    }
+
+    #[test]
+    fn test_not_prefetched_error_is_actionable() {
+        let spec = PackageSpec {
+            namespace: "preview".into(),
+            name: "cetz".into(),
+            version: typst::syntax::package::PackageVersion {
+                major: 0,
+                minor: 3,
+                patch: 4,
+            },
+        };
+        let msg = PackageError::NotPrefetched(spec).to_string();
+        assert!(
+            msg.contains("prefetch"),
+            "message must name the fix: {msg}"
+        );
+        assert!(
+            msg.contains("@preview/cetz:0.3.4"),
+            "message must name the spec: {msg}"
+        );
     }
 
     #[test]
