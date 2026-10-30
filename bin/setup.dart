@@ -9,11 +9,17 @@ import 'package:archive/archive_io.dart';
 import 'package:crypto/crypto.dart';
 import 'package:http/http.dart' as http;
 import 'package:path/path.dart' as p;
+import 'package:typst_flutter/src/setup/setup_options.dart';
 
 // ── Entry point ──────────────────────────────────────────────────────────────
 
 void main(List<String> args) async {
-  final options = _Options.parse(args);
+  if (args.contains('--help') || args.contains('-h')) {
+    _printHelp();
+    exit(0);
+  }
+
+  final options = SetupOptions.parse(args);
   final setup = _Setup(options);
   await setup.run();
 }
@@ -24,54 +30,6 @@ const _repoOwner = 'ajmalbuv';
 const _repoName = 'typst_flutter';
 const _prebuiltDir = '.typst_flutter_prebuilt';
 const _versionFile = '$_prebuiltDir/.version';
-
-class _Options {
-  _Options({
-    required this.version,
-    required this.noVerify,
-    required this.force,
-    required this.allPlatforms,
-  });
-
-  factory _Options.parse(List<String> args) {
-    String? version;
-    var noVerify = false;
-    var force = false;
-    var allPlatforms = false;
-
-    for (var i = 0; i < args.length; i++) {
-      final arg = args[i];
-      if (arg == '--no-verify') {
-        noVerify = true;
-      } else if (arg == '--force') {
-        force = true;
-      } else if (arg == '--all-platforms') {
-        allPlatforms = true;
-      } else if (arg == '--version' && i + 1 < args.length) {
-        version = args[++i];
-      } else if (arg.startsWith('--version=')) {
-        version = arg.substring('--version='.length);
-      } else if (arg == '--help' || arg == '-h') {
-        _printHelp();
-        exit(0);
-      }
-    }
-
-    return _Options(
-      version: version,
-      noVerify: noVerify,
-      force: force,
-      allPlatforms: allPlatforms,
-    );
-  }
-
-  final String? version;
-  final bool noVerify;
-  final bool force;
-
-  /// When true, download binaries for every platform (used in CI).
-  final bool allPlatforms;
-}
 
 void _printHelp() {
   print('''
@@ -90,6 +48,10 @@ Options:
   --force           Re-download even if the correct version is already present.
   --no-verify       Skip SHA-256 checksum verification.
   --all-platforms   Download binaries for every supported platform.
+  --web             Also download the WebAssembly bundle for Flutter web and
+                    unpack it into <current dir>/web/pkg. The app must then be
+                    served with Cross-Origin-Opener-Policy: same-origin and
+                    Cross-Origin-Embedder-Policy: require-corp.
   --help            Show this help.
 ''');
 }
@@ -221,7 +183,7 @@ List<_Artifact> _allArtifacts() => [
 
 class _Setup {
   _Setup(this._opts);
-  final _Options _opts;
+  final SetupOptions _opts;
 
   late final String _packageRoot;
   late final String _version;
@@ -288,6 +250,10 @@ class _Setup {
     print('✓ Done! Downloaded $downloaded/${artifacts.length} artifacts.');
     print('  Libraries for $platform are ready.');
     print('  You can now build your Flutter app without Rust installed.');
+
+    if (_opts.includeWeb) {
+      await _downloadWeb();
+    }
   }
 
   // ── Helpers ───────────────────────────────────────────────────────────────
@@ -297,6 +263,92 @@ class _Setup {
     final stampFile = File(stampPath);
     if (!stampFile.existsSync()) return false;
     return stampFile.readAsStringSync().trim() == _version;
+  }
+
+  /// Downloads `typst_flutter_web.tar.gz` and unpacks it into the current
+  /// working directory's `web/pkg`, which is what a browser serves.
+  Future<void> _downloadWeb() async {
+    const assetName = 'typst_flutter_web.tar.gz';
+    final cwd = Directory.current.path;
+    final destination = _opts.webDestinationFor(cwd);
+    final stampPath = _opts.webVersionStampFor(cwd);
+
+    print('');
+    print('── Web (WebAssembly) ──────────────────────────────────────');
+    print('  Destination  : $destination');
+
+    final stamp = File(stampPath);
+    if (!_opts.force &&
+        stamp.existsSync() &&
+        stamp.readAsStringSync().trim() == _version) {
+      print('✓ Web bundle for v$_version is already present.');
+      _printWebInstructions();
+      return;
+    }
+
+    final url =
+        'https://github.com/$_repoOwner/$_repoName/releases/download/v$_version/$assetName';
+    print('⟳ $assetName');
+
+    final response = await http.get(Uri.parse(url));
+    if (response.statusCode == 404) {
+      throw Exception(
+        'Web bundle not found on GitHub Releases (HTTP 404). '
+        'Check that v$_version has been released.',
+      );
+    }
+    if (response.statusCode != 200) {
+      throw Exception('HTTP ${response.statusCode} for $url');
+    }
+
+    final bytes = response.bodyBytes;
+    if (!_opts.noVerify && _sha256sums.isNotEmpty) {
+      final expected = _sha256sums[assetName];
+      if (expected != null) {
+        final actual = sha256.convert(bytes).toString();
+        if (actual != expected) {
+          throw Exception(
+            'SHA-256 mismatch for $assetName!\n'
+            '  expected: $expected\n'
+            '  actual  : $actual',
+          );
+        }
+      } else {
+        print('    (no checksum entry for $assetName — skipping verification)');
+      }
+    }
+
+    final tarBytes = const GZipDecoder().decodeBytes(bytes);
+    final archive = TarDecoder().decodeBytes(tarBytes);
+    var extracted = 0;
+    for (final entry in archive.files) {
+      if (!entry.isFile) continue;
+      final relative = _opts.webEntryPath(entry.name);
+      if (relative == null) continue;
+      final target = p.join(destination, p.joinAll(relative.split('/')));
+      File(target).createSync(recursive: true);
+      File(target).writeAsBytesSync(entry.content as List<int>);
+      extracted++;
+    }
+
+    Directory(p.dirname(stampPath)).createSync(recursive: true);
+    File(stampPath).writeAsStringSync(_version);
+
+    final mb = (bytes.length / (1024 * 1024)).toStringAsFixed(1);
+    print('  ✓ $extracted files into $destination ($mb MB compressed)');
+    _printWebInstructions();
+  }
+
+  void _printWebInstructions() {
+    print('');
+    print('  Serve the app with these response headers, or the wasm cannot');
+    print('  use worker threads:');
+    print('    Cross-Origin-Opener-Policy: same-origin');
+    print('    Cross-Origin-Embedder-Policy: require-corp');
+    print('  Dev server:');
+    print(r'    flutter run -d chrome --wasm \');
+    print(r'      --web-header=Cross-Origin-Opener-Policy=same-origin \');
+    print('      --web-header=Cross-Origin-Embedder-Policy=require-corp');
   }
 
   Future<void> _downloadArtifact(_Artifact artifact) async {

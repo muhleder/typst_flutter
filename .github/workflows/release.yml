@@ -228,9 +228,58 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
 
+  # ── Web (WebAssembly) ─────────────────────────────────────────────────────
+  # Produces the bundle `dart run typst_flutter:setup --web` downloads:
+  # typst_flutter_web.tar.gz containing pkg/typst_flutter.js and
+  # pkg/typst_flutter_bg.wasm.
+  build-web:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: dtolnay/rust-toolchain@nightly
+        with:
+          components: rust-src
+          targets: wasm32-unknown-unknown
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: rust
+
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: "stable"
+
+      - name: Install wasm toolchain
+        run: |
+          cargo install wasm-pack
+          cargo install flutter_rust_bridge_codegen --version 2.14.0-beta.2 --locked
+
+      - name: Build the wasm bundle
+        run: flutter_rust_bridge_codegen build-web --release -o ../example/web
+
+      - name: Package
+        run: |
+          mkdir -p dist
+          tar -czf dist/typst_flutter_web.tar.gz -C example/web pkg
+          ls -l dist
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: web
+          path: dist/typst_flutter_web.tar.gz
+
+      - uses: softprops/action-gh-release@v3
+        with:
+          files: dist/typst_flutter_web.tar.gz
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
   # ── SHA-256 checksums ─────────────────────────────────────────────────────
   generate-checksums:
-    needs: [build-android, build-ios, build-linux, build-windows, build-macos]
+    needs: [build-android, build-ios, build-linux, build-windows, build-macos, build-web]
     runs-on: ubuntu-latest
     permissions:
       contents: write
