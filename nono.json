@@ -1,0 +1,69 @@
+{
+  "extends": "nolabs-ai/pi",
+  "meta": {
+    "name": "generic-dart"
+  },
+  "groups": {
+    "include": [],
+    "exclude": []
+  },
+  "commands": {
+    "allow": [],
+    "deny": []
+  },
+  "workdir": {
+    "access": "readwrite"
+  },
+  "filesystem": {
+    "allow": [
+      "/bin/ps",
+      "/var/folders",
+      "~/.dart-cli-completion",
+      "~/Library/Application Support/fvm/",
+      "~/Library/Developer/Xcode/DerivedData",
+      "~/Library/Application Support/Google/Chrome",
+      "~/fvm",
+      "~/.fvm_flutter",
+      "~/.pub-cache",
+      "~/.dart",
+      "~/.dartServer",
+      "~/.dart-tool",
+      "~/.dart_tool",
+      "~/.config/flutter",
+      "~/.gradle",
+      "~/Library/Android/sdk", 
+      "~/.android"
+    ],
+    "read": [
+      "/Library/Developer/CommandLineTools",
+      "/Applications/Xcode.app",
+      "~/Library/Developer",
+      "~/.CFUserTextEncoding",
+       "~/.pi-local/bin/pi"
+    ],
+    "write": [
+    ],
+    "allow_file": [],
+    "read_file": [],
+    "write_file": [],
+    "deny": [
+      "nono.json"
+    ],
+    "bypass_protection": [],
+    "suppress_save_prompt": []
+  },
+  "network": {
+    "block": false,
+    "allow_domain": [],
+    "credentials": [],
+    "open_port": [],
+    "listen_port": [],
+    "custom_credentials": {}
+  },
+  "env_credentials": {},
+  "hooks": {},
+  "rollback": {
+    "exclude_patterns": [],
+    "exclude_globs": []
+  }
+}

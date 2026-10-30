@@ -1,0 +1,2 @@
+#!/bin/bash
+nono run --profile ./nono.json -- pi --mode text "$@"
