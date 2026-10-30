@@ -1,5 +1,50 @@
 import 'package:path/path.dart' as p;
 
+/// The GitHub repository release assets are downloaded from.
+///
+/// The default comes from the package's own `pubspec.yaml`, so a fork
+/// resolves to its own releases instead of the upstream ones — the reason a
+/// fork's `setup --web` used to 404.
+class RepositorySlug {
+  /// Creates a slug.
+  const RepositorySlug(this.owner, this.name);
+
+  /// Parses `owner/name`. Returns null if the string is not that shape.
+  static RepositorySlug? parse(String value) {
+    final parts = value
+        .trim()
+        .split('/')
+        .where((part) => part.isNotEmpty)
+        .toList();
+    if (parts.length != 2) return null;
+    return RepositorySlug(_stripGit(parts[0]), _stripGit(parts[1]));
+  }
+
+  /// Parses the `repository:` URL of a `pubspec.yaml`.
+  static RepositorySlug? fromRepositoryUrl(String url) {
+    final uri = Uri.tryParse(url.trim());
+    if (uri == null || uri.host.isEmpty) return null;
+    final segments = uri.pathSegments.where((part) => part.isNotEmpty).toList();
+    if (segments.length < 2) return null;
+    return RepositorySlug(
+      _stripGit(segments[segments.length - 2]),
+      _stripGit(segments.last),
+    );
+  }
+
+  /// Repository owner or organisation.
+  final String owner;
+
+  /// Repository name.
+  final String name;
+
+  static String _stripGit(String value) =>
+      value.endsWith('.git') ? value.substring(0, value.length - 4) : value;
+
+  @override
+  String toString() => '$owner/$name';
+}
+
 /// Command-line options for `dart run typst_flutter:setup`.
 ///
 /// Lives in `lib/` (not `bin/`) so the parsing and path rules can be tested
@@ -13,6 +58,7 @@ class SetupOptions {
     this.force = false,
     this.allPlatforms = false,
     this.includeWeb = false,
+    this.repo,
   });
 
   /// Parses the command line, ignoring unknown arguments.
@@ -22,6 +68,7 @@ class SetupOptions {
     var force = false;
     var allPlatforms = false;
     var includeWeb = false;
+    RepositorySlug? repo;
 
     for (var i = 0; i < args.length; i++) {
       final arg = args[i];
@@ -33,6 +80,10 @@ class SetupOptions {
         allPlatforms = true;
       } else if (arg == '--web') {
         includeWeb = true;
+      } else if (arg == '--repo' && i + 1 < args.length) {
+        repo = RepositorySlug.parse(args[++i]);
+      } else if (arg.startsWith('--repo=')) {
+        repo = RepositorySlug.parse(arg.substring('--repo='.length));
       } else if (arg == '--version' && i + 1 < args.length) {
         version = args[++i];
       } else if (arg.startsWith('--version=')) {
@@ -46,6 +97,7 @@ class SetupOptions {
       force: force,
       allPlatforms: allPlatforms,
       includeWeb: includeWeb,
+      repo: repo,
     );
   }
 
@@ -64,6 +116,12 @@ class SetupOptions {
   /// Downloads the WebAssembly bundle as well. Never implied: a native-only
   /// app should not receive web files it did not ask for.
   final bool includeWeb;
+
+  /// Repository to download release assets from.
+  ///
+  /// Set with `--repo owner/name` or `TYPST_FLUTTER_REPO`; otherwise derived
+  /// from the package's `pubspec.yaml`, so a fork points at its own releases.
+  final RepositorySlug? repo;
 
   /// Where the wasm bundle goes: the *consuming app's* `web/pkg`, because the
   /// app's web root is what a browser serves.

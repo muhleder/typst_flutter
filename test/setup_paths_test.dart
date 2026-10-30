@@ -31,6 +31,46 @@ void main() {
     });
   });
 
+  group('RepositorySlug', () {
+    test('parses an owner/name pair', () {
+      final slug = RepositorySlug.parse('muhleder/typst_flutter');
+
+      expect(slug?.owner, 'muhleder');
+      expect(slug?.name, 'typst_flutter');
+    });
+
+    test('derives the slug from the pubspec repository url', () {
+      final slug = RepositorySlug.fromRepositoryUrl(
+        'https://github.com/muhleder/typst_flutter.git',
+      );
+
+      expect(slug?.owner, 'muhleder');
+      expect(slug?.name, 'typst_flutter');
+    });
+
+    test('tolerates a trailing slash', () {
+      expect(
+        RepositorySlug.fromRepositoryUrl(
+          'https://github.com/muhleder/typst_flutter/',
+        )?.name,
+        'typst_flutter',
+      );
+    });
+
+    test('returns null for a url it cannot read, so callers can fall back', () {
+      expect(RepositorySlug.fromRepositoryUrl(''), isNull);
+      expect(RepositorySlug.fromRepositoryUrl('not a url'), isNull);
+      expect(RepositorySlug.parse('just-a-name'), isNull);
+    });
+  });
+
+  test('--repo overrides the release repository', () {
+    final options = SetupOptions.parse(['--web', '--repo', 'muhleder/my-fork']);
+
+    expect(options.repo?.owner, 'muhleder');
+    expect(options.repo?.name, 'my-fork');
+  });
+
   test('web artifacts land in <cwd>/web/pkg, not in the package root', () {
     final options = SetupOptions.parse(['--web']);
 

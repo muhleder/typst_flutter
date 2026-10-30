@@ -113,6 +113,65 @@ void main() {
       expect(Directory(p.join(appDir, 'web')).existsSync(), isFalse);
     });
 
+    test('a fork downloads from its own repository', () async {
+      // The reported bug: setup pointed at the upstream owner, so a fork's
+      // release assets 404ed.
+      File(p.join(packageDir, 'pubspec.yaml')).writeAsStringSync('''
+name: typst_flutter
+version: 9.9.9
+repository: https://github.com/muhleder/typst_flutter
+''');
+
+      await SetupRunner(
+        SetupOptions.parse(['--web', '--version', '9.9.9']),
+        httpGet: fakeGet,
+        packageRoot: packageDir,
+        workingDirectory: appDir,
+      ).run();
+
+      expect(
+        requested.where(
+          (url) => url.startsWith(
+            'https://github.com/muhleder/typst_flutter/releases/'
+            'download/v9.9.9/',
+          ),
+        ),
+        isNotEmpty,
+        reason: 'a fork must fetch from its own releases',
+      );
+      expect(
+        requested.where((url) => url.contains('ajmalbuv')),
+        isEmpty,
+        reason: 'upstream must not be contacted by a fork',
+      );
+    });
+
+    test('--repo overrides the pubspec repository', () async {
+      File(p.join(packageDir, 'pubspec.yaml')).writeAsStringSync('''
+name: typst_flutter
+version: 9.9.9
+repository: https://github.com/muhleder/typst_flutter
+''');
+
+      await SetupRunner(
+        SetupOptions.parse([
+          '--web',
+          '--version',
+          '9.9.9',
+          '--repo',
+          'someone/elsewhere',
+        ]),
+        httpGet: fakeGet,
+        packageRoot: packageDir,
+        workingDirectory: appDir,
+      ).run();
+
+      expect(
+        requested.where((url) => url.contains('someone/elsewhere')),
+        isNotEmpty,
+      );
+    });
+
     test('a matching web stamp skips the download', () async {
       Directory(p.join(appDir, 'web', 'pkg')).createSync(recursive: true);
       File(

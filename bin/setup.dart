@@ -26,8 +26,8 @@ void main(List<String> args) async {
 
 // ── Configuration ────────────────────────────────────────────────────────────
 
-const _repoOwner = 'ajmalbuv';
-const _repoName = 'typst_flutter';
+/// Last-resort repository, used only if the pubspec has no repository URL.
+const _fallbackRepo = RepositorySlug('ajmalbuv', 'typst_flutter');
 const _prebuiltDir = '.typst_flutter_prebuilt';
 const _versionFile = '$_prebuiltDir/.version';
 
@@ -52,6 +52,10 @@ Options:
                     unpack it into <current dir>/web/pkg. The app must then be
                     served with Cross-Origin-Opener-Policy: same-origin and
                     Cross-Origin-Embedder-Policy: require-corp.
+  --repo <owner/name>
+                    Repository to download release assets from. Defaults to
+                    the package's pubspec `repository:` URL, so a fork uses
+                    its own releases. Also read from TYPST_FLUTTER_REPO.
   --help            Show this help.
 ''');
 }
@@ -203,11 +207,13 @@ class SetupRunner {
 
   late final String _packageRoot;
   late final String _version;
+  late final RepositorySlug _repo;
   Map<String, String> _sha256sums = {};
 
   Future<void> run() async {
     _packageRoot = _packageRootOverride ?? await _findPackageRoot();
     _version = _opts.version ?? _readVersion();
+    _repo = _resolveRepo();
 
     print('╔══════════════════════════════════════════════════╗');
     print('║        typst_flutter native library setup        ║');
@@ -215,6 +221,7 @@ class SetupRunner {
     print('');
     print('  Package root : $_packageRoot');
     print('  Version      : $_version');
+    print('  Release repo : $_repo');
     print('  Verify SHA   : ${!_opts.noVerify}');
     print('');
 
@@ -314,7 +321,7 @@ class SetupRunner {
     }
 
     final url =
-        'https://github.com/$_repoOwner/$_repoName/releases/download/v$_version/$assetName';
+        'https://github.com/$_repo/releases/download/v$_version/$assetName';
     print('⟳ $assetName');
 
     final response = await _httpGet(Uri.parse(url));
@@ -380,7 +387,7 @@ class SetupRunner {
 
   Future<void> _downloadArtifact(_Artifact artifact) async {
     final url =
-        'https://github.com/$_repoOwner/$_repoName/releases/download/v$_version/${artifact.filename}';
+        'https://github.com/$_repo/releases/download/v$_version/${artifact.filename}';
     final destPath = p.join(
       _packageRoot,
       _prebuiltDir,
@@ -442,8 +449,7 @@ class SetupRunner {
 
   Future<Map<String, String>> _fetchChecksums() async {
     final baseUrl =
-        'https://github.com/$_repoOwner/$_repoName'
-        '/releases/download/v$_version/SHA256SUMS';
+        'https://github.com/$_repo/releases/download/v$_version/SHA256SUMS';
     final response = await _httpGet(Uri.parse(baseUrl));
 
     if (response.statusCode != 200) {
@@ -482,6 +488,42 @@ class SetupRunner {
     // We want the directory containing pubspec.yaml, which is one level up from lib/
     final libDir = p.dirname(uri.toFilePath());
     return p.dirname(libDir);
+  }
+
+  /// Chooses the release repository: `--repo`, then `TYPST_FLUTTER_REPO`,
+  /// then the package's own `repository:` URL, then the upstream default.
+  ///
+  /// The pubspec is the important one: without it a fork's
+  /// `dart run typst_flutter:setup --web` asks the upstream repository for a
+  /// release it never published, and 404s.
+  RepositorySlug _resolveRepo() {
+    if (_opts.repo != null) return _opts.repo!;
+
+    final fromEnv = Platform.environment['TYPST_FLUTTER_REPO'];
+    if (fromEnv != null && fromEnv.trim().isNotEmpty) {
+      final parsed = RepositorySlug.parse(fromEnv);
+      if (parsed != null) return parsed;
+    }
+
+    final repositoryUrl = _readPubspecRepository();
+    if (repositoryUrl != null) {
+      final parsed = RepositorySlug.fromRepositoryUrl(repositoryUrl);
+      if (parsed != null) return parsed;
+    }
+
+    return _fallbackRepo;
+  }
+
+  /// Reads `repository:` from pubspec.yaml, if present.
+  String? _readPubspecRepository() {
+    final pubspecPath = p.join(_packageRoot, 'pubspec.yaml');
+    final file = File(pubspecPath);
+    if (!file.existsSync()) return null;
+    final match = RegExp(
+      r'^repository:\s*(.+)$',
+      multiLine: true,
+    ).firstMatch(file.readAsStringSync());
+    return match?.group(1)?.trim();
   }
 
   /// Reads the package version from pubspec.yaml.
