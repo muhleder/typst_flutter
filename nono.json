@@ -32,7 +32,9 @@
       "~/.config/flutter",
       "~/.gradle",
       "~/Library/Android/sdk", 
-      "~/.android"
+      "~/.android",
+      "~/.cargo",
+      "~/.rustup"
     ],
     "read": [
       "/Library/Developer/CommandLineTools",
