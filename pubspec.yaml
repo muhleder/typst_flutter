@@ -1,8 +1,9 @@
 name: typst_flutter
 description: >-
-  Embed the Typst typesetting compiler natively in Flutter via Rust FFI.
-  Compile Typst markup to PDF or rendered images on all platforms except web — no WASM, no server required.
-version: 3.0.0
+  Embed the Typst typesetting compiler in Flutter via Rust FFI on Android, iOS,
+  macOS, Windows and Linux, and via WebAssembly on the web. Compile Typst markup
+  to PDF or rendered images on-device — no server required.
+version: 3.1.0-beta.1
 homepage: https://github.com/ajmalbuv/typst_flutter
 repository: https://github.com/ajmalbuv/typst_flutter
 issue_tracker: https://github.com/ajmalbuv/typst_flutter/issues
@@ -13,6 +14,8 @@ topics:
   - document
   - typesetting
   - ffi
+  - wasm
+  - web
 
 environment:
   sdk: ^3.11.0
@@ -65,6 +68,9 @@ flutter:
         ffiPlugin: true
       windows:
         ffiPlugin: true
+      web:
+        pluginClass: TypstFlutterWeb
+        fileName: typst_flutter_web.dart
 
   # To add assets to your plugin package, add an assets section, like this:
   # assets:

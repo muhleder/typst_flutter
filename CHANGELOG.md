@@ -1,10 +1,41 @@
 ## 3.1.0-beta.1
 
+### New Features
+
+- **Flutter Web support (WebAssembly)**: the whole API now works in the browser,
+  in apps built with `flutter build web --wasm` (dart2wasm) and with the
+  JavaScript compiler.
+  - `TypstCompiler`, `TypstDocument`, `TypstView`, `TypstDocumentViewer` and PDF
+    export run from a threaded wasm build; compilation happens on Flutter
+    Rust Bridge's worker pool, so the UI thread is never blocked.
+  - `#import "@preview/..."` works on web: packages are scanned in Rust,
+    downloaded in Dart and injected into the compiler before it runs, because a
+    browser cannot fetch from inside Typst's synchronous file lookup. Failures
+    surface as `TypstCompileException` naming the package and URL.
+  - New `TypstFlutter.configure(packageRegistryUrl:)` points web builds at a
+    registry mirror.
+  - New `TypstWebSetupException` explains a missing or stale wasm bundle and the
+    `dart run typst_flutter:setup --web` command that fixes it.
+  - `dart run typst_flutter:setup --web` downloads the wasm bundle into the
+    app's `web/pkg` (verified against `SHA256SUMS`); it is opt-in, so native-only
+    apps never receive web files.
+  - The web build requires cross-origin isolation:
+    `Cross-Origin-Opener-Policy: same-origin` and
+    `Cross-Origin-Embedder-Policy: require-corp`.
+  - Web limitations: 1 GiB wasm memory ceiling, Typst layout runs
+    single-threaded inside one worker, and the bundle is 22.7 MB raw
+    (7.3 MB brotli).
+- Dependency: `flutter_rust_bridge` **2.14.0-beta.2** (pinned). 2.14 is the first
+  release with Dart-Wasm support; a stable `typst_flutter` 3.1.0 will follow once
+  FRB 2.14.0 is stable.
+
 ### Breaking-ish
 
 - `TypstCompiler` no longer implements `dart:ffi`'s `Finalizable`. The marker
   interface made `lib/` unbuildable for web; `dispose()` is unchanged and remains
   the way to release native resources.
+- `[profile.release]` now uses fat LTO, which makes release builds slower to
+  link and smaller to ship.
 
 ## 3.0.0
 

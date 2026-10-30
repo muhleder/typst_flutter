@@ -27,6 +27,7 @@ export default defineConfig({
           items: [
             { label: 'Introduction', slug: 'index' },
             { label: 'Getting Started', slug: 'guides/getting-started' },
+            { label: 'Web (WebAssembly)', slug: 'guides/web' },
           ],
         },
         {

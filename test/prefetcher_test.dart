@@ -120,10 +120,7 @@ void main() {
         '/preview/outer-0.1.0.tar.gz',
         '/preview/inner-0.2.0.tar.gz',
       ]);
-      expect(source.cached, {
-        '@preview/outer:0.1.0',
-        '@preview/inner:0.2.0',
-      });
+      expect(source.cached, {'@preview/outer:0.1.0', '@preview/inner:0.2.0'});
     });
 
     test('never re-downloads a package the engine already cached', () async {
@@ -151,31 +148,33 @@ void main() {
       expect(requested, ['/preview/cetz-0.3.4.tar.gz']);
     });
 
-    test('passes the project files to the engine so includes are scanned',
-        () async {
-      final client = MockClient(
-        (request) async => http.Response.bytes([1], 200),
-      );
-      final source = _FakeSource(['@preview/cetz:0.3.4']);
-      final prefetcher = PackagePrefetcher(
-        source,
-        registryUrl: 'https://packages.typst.org',
-        httpClient: client,
-      );
+    test(
+      'passes the project files to the engine so includes are scanned',
+      () async {
+        final client = MockClient(
+          (request) async => http.Response.bytes([1], 200),
+        );
+        final source = _FakeSource(['@preview/cetz:0.3.4']);
+        final prefetcher = PackagePrefetcher(
+          source,
+          registryUrl: 'https://packages.typst.org',
+          httpClient: client,
+        );
 
-      await prefetcher.prefetch(
-        markup: '= Main',
-        files: [
-          api.VirtualFile(
-            path: 'chapter.typ',
-            bytes: utf8.encode('#import "@preview/cetz:0.3.4": *'),
-          ),
-        ],
-      );
+        await prefetcher.prefetch(
+          markup: '= Main',
+          files: [
+            api.VirtualFile(
+              path: 'chapter.typ',
+              bytes: utf8.encode('#import "@preview/cetz:0.3.4": *'),
+            ),
+          ],
+        );
 
-      expect(source.scannedFiles, ['chapter.typ']);
-      expect(source.cached, {'@preview/cetz:0.3.4'});
-    });
+        expect(source.scannedFiles, ['chapter.typ']);
+        expect(source.cached, {'@preview/cetz:0.3.4'});
+      },
+    );
 
     test('a package cycle terminates instead of looping forever', () async {
       final client = MockClient(

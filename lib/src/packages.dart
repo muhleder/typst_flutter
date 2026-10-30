@@ -43,9 +43,8 @@ final class EnginePackageSource implements PackageSource {
   List<String> cachedPackageSpecs() => _engine.cachedPackageSpecs();
 
   @override
-  Future<List<String>> addPackageArchives(
-    List<api.PackageArchive> archives,
-  ) => _engine.addPackageArchives(archives: archives);
+  Future<List<String>> addPackageArchives(List<api.PackageArchive> archives) =>
+      _engine.addPackageArchives(archives: archives);
 }
 
 /// Downloads the `@preview/...` packages a document references and injects

@@ -470,17 +470,17 @@ Subsequent builds are fast due to Cargo's incremental compilation.
 
 |                      | [typst.ts](https://github.com/Myriad-Dreamin/typst.ts) | typst_flutter              |
 | -------------------- | ------------------------------------------------------ | -------------------------- |
-| Target               | Web (browser)                                          | Mobile + Desktop (Flutter) |
-| Runtime              | WASM                                                   | Native Rust via dart:ffi   |
+| Target               | Web (browser)                                          | Mobile + Desktop + Web     |
+| Runtime              | WASM                                                   | Native dart:ffi, WASM on web |
 | Distribution         | npm package                                            | pub.dev + GitHub Releases  |
 | Font loading         | Web fonts / bundled                                    | Flutter assets / raw bytes |
 | PDF output           | ✅                                                     | ✅                         |
 | SVG output           | ✅                                                     | ✅                         |
 | Image render         | ✅                                                     | ✅                         |
 | Incremental compile  | ✅                                                     | Planned                    |
-| Offline              | ✅                                                     | ✅                         |
+| Offline              | ✅                                                     | ✅ (web: cached wasm, packages fetched per compiler) |
 | Mobile (iOS/Android) | ❌                                                     | ✅                         |
-| Binary size overhead | WASM (~8MB)                                            | Native (~15MB)             |
+| Binary size overhead | WASM (~8MB)                                            | Native (~15MB); web wasm 22.7MB raw / 7.3MB brotli |
 
 The goal is to match typst.ts in features and developer experience,
 but for the Flutter ecosystem.
@@ -494,6 +494,7 @@ but for the Flutter ecosystem.
 - typst-pdf crate: https://docs.rs/typst-pdf
 - typst-render crate: https://docs.rs/typst-render
 - typst.ts (web equivalent): https://github.com/Myriad-Dreamin/typst.ts
+- Web design + plan: `docs/superpowers/specs/2026-10-30-flutter-web-wasm-design.md`
 - dart:ffi docs: https://dart.dev/guides/libraries/c-interop
 - Flutter FFI plugin guide: https://docs.flutter.dev/platform-integration/android/c-interop
 - pub.dev package: https://pub.dev/packages/typst_flutter (not yet published)

@@ -31,6 +31,8 @@ This document tracks completed milestones and upcoming features for full feature
 
 - [ ] **Host System Font Discovery**:
   - Auto-discover fonts installed in host OS directories (Windows Fonts, macOS `/Library/Fonts`, Linux fontconfig, Android fallback) so users don't need to manually bundle standard fonts.
-- [ ] **Flutter Web Support (WASM)**:
-  - Branch networking from blocking `ureq` to browser `fetch()` for `wasm32-unknown-unknown`.
-  - Evaluate Web Worker isolate bridges and bundle size mitigation for `typst_flutter.wasm`.
+- [x] **Flutter Web Support (WASM)** (3.1.0-beta.1):
+  - Shipping: threaded `wasm32-unknown-unknown` build, FRB worker pool, Dart-side
+    package prefetch (a browser cannot fetch inside `World::file`).
+  - Design: `docs/superpowers/specs/2026-10-30-flutter-web-wasm-design.md`.
+  - Remaining size work belongs to P2 (fonts are 2.0 MB of the 22.7 MB wasm).

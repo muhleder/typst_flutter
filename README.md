@@ -8,9 +8,11 @@
 [![style: very good analysis](https://img.shields.io/badge/style-very_good_analysis-B22C89.svg)](https://pub.dev/packages/very_good_analysis)
 [![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
 
-Embed the **Typst typesetting compiler** natively into your Flutter apps via Rust FFI.
+Embed the **Typst typesetting compiler** into your Flutter apps: native Rust via
+FFI on Android, iOS, macOS, Windows and Linux, and WebAssembly in the browser.
 
-Compile Typst markup to high-quality PDF documents or rendered images on Android, iOS, macOS, Windows, and Linux. No WASM overhead, no WebView, no server required.
+Compile Typst markup to high-quality PDF documents or rendered images on-device.
+No WebView, no server, no network round-trip.
 
 ## Links
 
@@ -27,7 +29,8 @@ Compile Typst markup to high-quality PDF documents or rendered images on Android
 - **Widgets Included:** Drop-in `TypstDocumentViewer` and `TypstView` widgets for instant live previews with Raster or SVG support.
 - **Structured Error Handling:** Get detailed `TypstDiagnostic` error lines when Typst compilation fails, perfect for building in-app editors.
 - **Virtual File System & Inputs:** Pass Flutter assets, raw memory bytes, and `sys.inputs` dictionaries directly into the Typst compiler.
-- **Typst Package Registry:** Full support for `#import "@preview/..."` with automatic downloading, decompression, and in-memory caching.
+- **Typst Package Registry:** Full support for `#import "@preview/..."` with automatic downloading, decompression, and in-memory caching — fetched in Rust on native platforms and in Dart (before compiling) on the web.
+- **Web Support:** The same API runs in the browser from WebAssembly, including the `TypstView` and `TypstDocumentViewer` widgets and PDF export. See [docs/guides/web](docs/src/content/docs/guides/web.md).
 
 ## Getting started
 
@@ -35,7 +38,7 @@ Add the package to your `pubspec.yaml`:
 
 ```yaml
 dependencies:
-  typst_flutter: ^3.0.0
+  typst_flutter: 3.1.0-beta.1
 ```
 
 Then fetch dependencies and run the **required** one-time setup:
@@ -51,6 +54,42 @@ dart run typst_flutter:setup
 > You only need to run this once per version upgrade.
 
 > **Tip:** The native build systems (Gradle, CocoaPods, CMake) will try to run `dart run typst_flutter:setup` automatically at build time if binaries are missing. This is best-effort — if it fails for any reason, just run it manually from your app root and rebuild.
+
+### Web
+
+Building for the browser needs one extra step, which fetches the WebAssembly
+bundle into your app's `web/pkg` directory:
+
+```bash
+dart run typst_flutter:setup --web
+```
+
+The page must then be served cross-origin isolated, or the wasm cannot use
+worker threads:
+
+```
+Cross-Origin-Opener-Policy: same-origin
+Cross-Origin-Embedder-Policy: require-corp
+```
+
+For development:
+
+```bash
+flutter run -d chrome --wasm \
+  --web-header=Cross-Origin-Opener-Policy=same-origin \
+  --web-header=Cross-Origin-Embedder-Policy=require-corp
+```
+
+```dart
+import 'package:typst_flutter/typst_flutter.dart';
+
+final compiler = await TypstCompiler.create();
+final doc = await compiler.compile(source: '= Hello from the browser');
+// TypstView and TypstDocumentViewer work unchanged.
+```
+
+Host-specific header snippets, the 1 GiB wasm memory ceiling and the other
+web differences are covered in the [web guide](docs/src/content/docs/guides/web.md).
 
 ## Usage
 
