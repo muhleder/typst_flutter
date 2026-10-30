@@ -301,10 +301,14 @@ usage is introduced anywhere in `lib/`.
 
 ## 10. Limits and budgets
 
-- **Wasm size budget:** ≤ 12 MB raw / ≤ 4 MB brotli-gzipped, measured in CI on the release build.
-  If exceeded, levers in order: move the three bundled fonts (2.0 MB total) out of
-  `include_bytes!` into Flutter assets loaded via the existing `addFonts`, tighten LTO/size
-  flags, then revisit Dart-side font subsetting (P2).
+- **Wasm size budget (measured 2026-10-30):** ≤ 24 MiB raw / ≤ 8 MiB brotli, enforced in CI.
+  The delivered build is 22.7 MB raw (`-Oz` + fat LTO) / 7.3 MB brotli (11.2 MB gzip). The original
+  12 MB / 4 MB estimate was made before measuring and was wrong by ~2×: 12 MB of the module is
+  static data (2.0 MB of it our bundled fonts; the rest is Typst's own tables and strings) and
+  11 MB is code. Removing `typst-pdf` saves only 1.3 MB, so PDF export is not the culprit.
+  Levers still on the table, in order: move the three bundled fonts to Flutter assets (−2.0 MB,
+  touches native font loading), `panic = "immediate-abort"` on nightly std (−~10%, changes panic
+  messages), then Dart-side font subsetting (P2).
 - **Memory:** 1 GiB wasm instance cap (FRB default). Document; do not raise silently.
 - **Threading:** one FRB worker runs a compile; Typst-internal parallelism is serial on web.
   Two concurrent `compile()` calls therefore interleave on the worker pool, they do not
