@@ -1,4 +1,6 @@
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
+import 'package:typst_flutter/src/bridge/bridge.dart';
 import 'package:typst_flutter/src/document.dart';
 import 'package:typst_flutter/src/exceptions.dart';
 import 'package:typst_flutter/src/files.dart';
@@ -46,14 +48,22 @@ class TypstCompiler {
   ///
   /// This is safe to call multiple times; the native library is only
   /// initialised once.
+  ///
+  /// On web the WebAssembly bundle is loaded from `pkg/typst_flutter` relative
+  /// to the page, which is where `dart run typst_flutter:setup --web` puts it.
   static Future<TypstCompiler> create({FontSource? fonts}) async {
     try {
-      await RustLib.init();
+      await initWithOptionalWebModule();
       // flutter_rust_bridge throws a StateError if init() is called more than
       // once. We ignore this specific error to remain robust in tests.
       // ignore: avoid_catching_errors
     } on StateError catch (e) {
       if (!e.message.contains('twice')) rethrow;
+    } on TypstWebSetupException {
+      rethrow;
+    } on Object catch (e) {
+      if (!kIsWeb) rethrow;
+      throw describeInitFailure(e);
     }
 
     final engine = api.TypstEngine();

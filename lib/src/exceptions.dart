@@ -57,3 +57,59 @@ class TypstRenderException extends TypstException {
   @override
   String toString() => 'TypstRenderException: $message';
 }
+
+/// Thrown when the WebAssembly bundle that powers web builds is missing,
+/// stale, or failed to load.
+///
+/// Web builds load `pkg/typst_flutter.js` and `pkg/typst_flutter_bg.wasm`
+/// from the host app's `web/` directory. Creating the artifacts and keeping
+/// them in step with this package version is done by
+/// `dart run typst_flutter:setup --web`.
+class TypstWebSetupException extends TypstException {
+  /// Creates a [TypstWebSetupException].
+  const TypstWebSetupException(super.message, {this.cause});
+
+  /// The underlying error, kept for debugging.
+  final Object? cause;
+
+  @override
+  String toString() {
+    final buffer = StringBuffer('TypstWebSetupException: $message');
+    if (cause != null) buffer.write('\nCaused by: $cause');
+    return buffer.toString();
+  }
+}
+
+/// Maps a failure from the web bridge initialisation into an actionable
+/// [TypstWebSetupException].
+///
+/// Two failures account for almost every real case: the bundle in `web/pkg`
+/// was built by a different version of this package (FRB's content-hash or
+/// codegen-version check), and the page was served without the headers the
+/// threaded wasm needs.
+TypstWebSetupException describeInitFailure(Object error) {
+  final text = error.toString();
+  final stale =
+      text.contains('content hash') ||
+      text.contains('codegen') ||
+      text.contains('flutter_rust_bridge_codegen');
+
+  if (stale) {
+    return TypstWebSetupException(
+      'The WebAssembly bundle in web/pkg is stale: it was built from a '
+      'different version of typst_flutter than the Dart code running now. '
+      'Re-run: dart run typst_flutter:setup --web',
+      cause: error,
+    );
+  }
+
+  return TypstWebSetupException(
+    'Failed to initialise the Typst WebAssembly module. Check that '
+    'web/pkg/typst_flutter.js and web/pkg/typst_flutter_bg.wasm are served, '
+    'and that the page is served with the headers the threaded wasm needs: '
+    'Cross-Origin-Opener-Policy: same-origin and '
+    'Cross-Origin-Embedder-Policy: require-corp. '
+    'If the files are missing, run: dart run typst_flutter:setup --web',
+    cause: error,
+  );
+}

@@ -16,6 +16,7 @@
 library;
 
 export 'src/compiler.dart';
+export 'src/config.dart';
 export 'src/document.dart';
 export 'src/exceptions.dart';
 export 'src/files.dart';
