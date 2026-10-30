@@ -4,6 +4,8 @@ import 'package:typst_flutter/typst_flutter.dart';
 import '../mocks/typst_mocks.dart';
 
 void main() {
+  group('TypstDocument PDF availability', _pdfAvailabilityTests);
+
   group('TypstDocument', () {
     test('fromInner constructor creates a valid document', () {
       final inner = FakeCompiledDocument();
@@ -396,5 +398,13 @@ void main() {
       expect(pngBytes, isNotEmpty);
       result.dispose();
     });
+  });
+}
+
+void _pdfAvailabilityTests() {
+  test('supportsPdfExport is true off the web', () {
+    // The web case is covered by the browser e2e; this pins that native code
+    // paths keep the feature.
+    expect(TypstDocument.supportsPdfExport, isTrue);
   });
 }

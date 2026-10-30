@@ -5,9 +5,9 @@
 - **Flutter Web support (WebAssembly)**: the whole API now works in the browser,
   in apps built with `flutter build web --wasm` (dart2wasm) and with the
   JavaScript compiler.
-  - `TypstCompiler`, `TypstDocument`, `TypstView`, `TypstDocumentViewer` and PDF
-    export run from a threaded wasm build; compilation happens on Flutter
-    Rust Bridge's worker pool, so the UI thread is never blocked.
+  - `TypstCompiler`, `TypstDocument`, `TypstView`, `TypstDocumentViewer`, SVG
+    and raster rendering run from a threaded wasm build; compilation happens on
+    Flutter Rust Bridge's worker pool, so the UI thread is never blocked.
   - `#import "@preview/..."` works on web: packages are scanned in Rust,
     downloaded in Dart and injected into the compiler before it runs, because a
     browser cannot fetch from inside Typst's synchronous file lookup. Failures
@@ -22,7 +22,15 @@
   - The web build requires cross-origin isolation:
     `Cross-Origin-Opener-Policy: same-origin` and
     `Cross-Origin-Embedder-Policy: require-corp`.
-  - Web limitations: 1 GiB wasm memory ceiling, Typst layout runs
+  - **PDF export is native-only.** `TypstDocument.exportPdf()` throws a
+    `TypstRenderException` on web and `TypstDocument.supportsPdfExport` is
+    `false`. `typst_pdf` -> `krilla` wraps font subsetting in `rayon::spawn`
+    and blocks on the result; the browser build cannot run rayon workers, so
+    the call blocked forever with no error (reported against an app whose page
+    used EB Garamond; documents small enough to finish inside `rayon::yield_now`
+    appeared to work). Re-enabling it needs an upstream `krilla` fix that runs
+    that work inline on wasm.
+  - Other web limitations: 1 GiB wasm memory ceiling, Typst layout runs
     single-threaded inside one worker, and the bundle is 22.7 MB raw
     (7.3 MB brotli).
 - Dependency: `flutter_rust_bridge` **2.14.0-beta.2** (pinned). 2.14 is the first

@@ -1,6 +1,7 @@
 import 'dart:typed_data';
 import 'dart:ui' as ui;
 
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:meta/meta.dart';
 import 'package:typst_flutter/src/exceptions.dart';
 import 'package:typst_flutter/src/rust/api/typst.dart' as api;
@@ -75,9 +76,19 @@ class TypstDocument {
     return _inner.pageInfo(index: BigInt.from(pageIndex));
   }
 
+  /// Whether [exportPdf] can be used on the current platform.
+  ///
+  /// `false` in web builds: `typst_pdf` hands font subsetting to `krilla`,
+  /// which dispatches it with `rayon::spawn` and then blocks on the result.
+  /// A browser build cannot run rayon workers (its only threads are
+  /// flutter_rust_bridge's Web Workers), so the export would block forever.
+  /// Use [renderSvg] or [renderRaster] there, or export PDF natively.
+  static bool get supportsPdfExport => !kIsWeb;
+
   /// Exports the entire document to a raw PDF byte array.
   ///
-  /// Throws [TypstRenderException] if the PDF export fails.
+  /// Throws [TypstRenderException] if the PDF export fails, which on web is
+  /// always: see [supportsPdfExport] for why.
   Future<Uint8List> exportPdf() async {
     _checkNotDisposed();
     try {

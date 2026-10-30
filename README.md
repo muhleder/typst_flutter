@@ -30,7 +30,7 @@ No WebView, no server, no network round-trip.
 - **Structured Error Handling:** Get detailed `TypstDiagnostic` error lines when Typst compilation fails, perfect for building in-app editors.
 - **Virtual File System & Inputs:** Pass Flutter assets, raw memory bytes, and `sys.inputs` dictionaries directly into the Typst compiler.
 - **Typst Package Registry:** Full support for `#import "@preview/..."` with automatic downloading, decompression, and in-memory caching — fetched in Rust on native platforms and in Dart (before compiling) on the web.
-- **Web Support:** The same API runs in the browser from WebAssembly, including the `TypstView` and `TypstDocumentViewer` widgets and PDF export. See [docs/guides/web](docs/src/content/docs/guides/web.md).
+- **Web Support:** The same API runs in the browser from WebAssembly, including the `TypstView` and `TypstDocumentViewer` widgets, raster and SVG rendering, and `@preview` packages. PDF export is native-only (see the [web guide](docs/src/content/docs/guides/web.md) for why).
 
 ## Getting started
 
