@@ -1,10 +1,13 @@
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
+import 'package:http/http.dart' as http;
 import 'package:typst_flutter/src/bridge/bridge.dart';
+import 'package:typst_flutter/src/config.dart';
 import 'package:typst_flutter/src/document.dart';
 import 'package:typst_flutter/src/exceptions.dart';
 import 'package:typst_flutter/src/files.dart';
 import 'package:typst_flutter/src/fonts.dart';
+import 'package:typst_flutter/src/packages.dart';
 import 'package:typst_flutter/src/rust/api/typst.dart' as api;
 import 'package:typst_flutter/src/rust/frb_generated.dart';
 
@@ -27,10 +30,19 @@ import 'package:typst_flutter/src/rust/frb_generated.dart';
 /// final result = await doc.renderRaster(pageIndex: 0);
 /// ```
 class TypstCompiler {
-  TypstCompiler._({required api.TypstEngine engine}) : _engine = engine;
+  TypstCompiler._({
+    required api.TypstEngine engine,
+    required String packageRegistryUrl,
+    required http.Client httpClient,
+  }) : _engine = engine,
+       _packageRegistryUrl = packageRegistryUrl,
+       _httpClient = httpClient;
 
   /// The underlying stateful Rust engine.
   final api.TypstEngine _engine;
+
+  final String _packageRegistryUrl;
+  final http.Client _httpClient;
 
   /// Releases the native resources associated with this compiler.
   ///
@@ -51,7 +63,16 @@ class TypstCompiler {
   ///
   /// On web the WebAssembly bundle is loaded from `pkg/typst_flutter` relative
   /// to the page, which is where `dart run typst_flutter:setup --web` puts it.
-  static Future<TypstCompiler> create({FontSource? fonts}) async {
+  ///
+  /// [packageRegistryUrl] and [httpClient] only affect web builds, where
+  /// packages are downloaded in Dart before compilation (a browser cannot
+  /// fetch inside `World::file`). On native platforms the registry URL comes
+  /// from `TYPST_PACKAGE_URL` or defaults to `https://packages.typst.org`.
+  static Future<TypstCompiler> create({
+    FontSource? fonts,
+    String? packageRegistryUrl,
+    http.Client? httpClient,
+  }) async {
     try {
       await initWithOptionalWebModule();
       // flutter_rust_bridge throws a StateError if init() is called more than
@@ -73,7 +94,12 @@ class TypstCompiler {
         await engine.addFonts(fontData: fontBytes);
       }
     }
-    return TypstCompiler._(engine: engine);
+    return TypstCompiler._(
+      engine: engine,
+      packageRegistryUrl:
+          packageRegistryUrl ?? TypstFlutter.packageRegistryUrl,
+      httpClient: httpClient ?? http.Client(),
+    );
   }
 
   // ── Public API ─────────────────────────────────────────────────────────────
@@ -108,6 +134,13 @@ class TypstCompiler {
     bool allowPackages = true,
   }) async {
     final virtualFiles = await _buildVirtualFiles(files);
+    if (kIsWeb && allowPackages) {
+      await PackagePrefetcher(
+        EnginePackageSource(_engine),
+        registryUrl: _packageRegistryUrl,
+        httpClient: _httpClient,
+      ).prefetch(markup: source, files: virtualFiles);
+    }
     try {
       final inner = await _engine.compile(
         markup: source,
