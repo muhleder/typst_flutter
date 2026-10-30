@@ -15,6 +15,16 @@ run:
 # Run integration tests
 test-integration:
     flutter test integration_test/simple_test.dart
+# Run on Chrome with WebAssembly and the cross-origin isolation the wasm needs
+run-web:
+    flutter run -d chrome --wasm \
+      --web-header=Cross-Origin-Opener-Policy=same-origin \
+      --web-header=Cross-Origin-Embedder-Policy=require-corp
+# Build the web app with WebAssembly (no browser needed; serve the output
+# with Cross-Origin-Opener-Policy: same-origin and
+# Cross-Origin-Embedder-Policy: require-corp)
+build-web:
+    flutter build web --wasm
 # Build android
 build-android:
     flutter build apk --release
