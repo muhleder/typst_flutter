@@ -112,6 +112,90 @@ jobs:
           files: rust/lcov.info
           flags: rust
 
+  # ── Web (WebAssembly) ─────────────────────────────────────────────────────
+  web-build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@nightly
+        with:
+          components: rust-src
+          targets: wasm32-unknown-unknown
+      - uses: swatinem/rust-cache@v2
+        with:
+          workspaces: rust
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: "stable"
+          cache: true
+      - name: Install dependencies
+        run: flutter pub get
+      - name: Install wasm toolchain
+        run: |
+          cargo install wasm-pack
+          cargo install flutter_rust_bridge_codegen --version 2.14.0-beta.2 --locked
+      - name: Build the wasm bundle
+        run: flutter_rust_bridge_codegen build-web --release -o ../example/web
+      - name: Enforce the wasm size budget
+        run: |
+          sudo apt-get update && sudo apt-get install -y brotli
+          wasm=$(stat -c%s example/web/pkg/typst_flutter_bg.wasm)
+          br=$(brotli -q 11 -c example/web/pkg/typst_flutter_bg.wasm | wc -c)
+          echo "wasm: $wasm bytes, brotli: $br bytes"
+          # Budget: 24 MiB raw / 8 MiB brotli (docs/superpowers/specs, section 10)
+          test "$wasm" -le 25165824
+          test "$br" -le 8388608
+      - name: Build the example for the web
+        run: flutter build web --wasm
+        working-directory: example
+      - uses: actions/upload-artifact@v7
+        with:
+          name: web-bundle
+          path: example/web/pkg
+
+  web-e2e:
+    needs: web-build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@nightly
+        with:
+          components: rust-src
+          targets: wasm32-unknown-unknown
+      - uses: swatinem/rust-cache@v2
+        with:
+          workspaces: rust
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: "stable"
+          cache: true
+      - uses: nanasess/setup-chromedriver@v2
+      - uses: actions/download-artifact@v8
+        with:
+          name: web-bundle
+          path: example/web/pkg
+      - name: Install wasm toolchain
+        run: |
+          cargo install wasm-pack
+          cargo install flutter_rust_bridge_codegen --version 2.14.0-beta.2 --locked
+      - name: Run the browser tests (dart2wasm)
+        working-directory: example
+        run: |
+          flutter pub get
+          chromedriver --port=4444 &
+          flutter drive --driver=test_driver/integration_test.dart \
+            --target=integration_test/web_test.dart -d chrome --wasm \
+            --web-header=Cross-Origin-Opener-Policy=same-origin \
+            --web-header=Cross-Origin-Embedder-Policy=require-corp
+      - name: Run the browser tests (JavaScript)
+        working-directory: example
+        run: |
+          chromedriver --port=4444 &
+          flutter drive --driver=test_driver/integration_test.dart \
+            --target=integration_test/web_test.dart -d chrome \
+            --web-header=Cross-Origin-Opener-Policy=same-origin \
+            --web-header=Cross-Origin-Embedder-Policy=require-corp
+
   pub-score:
     runs-on: ubuntu-latest
     steps:
