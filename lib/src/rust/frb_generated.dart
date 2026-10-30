@@ -66,7 +66,7 @@ class RustLib extends BaseEntrypoint<RustLibApi, RustLibApiImpl, RustLibWire> {
   String get codegenVersion => '2.14.0-beta.2';
 
   @override
-  int get rustContentHash => -724385650;
+  int get rustContentHash => 766393951;
 
   static const kDefaultExternalLibraryLoaderConfig =
       ExternalLibraryLoaderConfig(
@@ -111,6 +111,15 @@ abstract class RustLibApi extends BaseApi {
     required List<Uint8List> fontData,
   });
 
+  Future<List<String>> crateApiTypstTypstEngineAddPackageArchives({
+    required TypstEngine that,
+    required List<PackageArchive> archives,
+  });
+
+  List<String> crateApiTypstTypstEngineCachedPackageSpecs({
+    required TypstEngine that,
+  });
+
   Future<CompiledDocument> crateApiTypstTypstEngineCompile({
     required TypstEngine that,
     required String markup,
@@ -126,6 +135,12 @@ abstract class RustLibApi extends BaseApi {
     required TypstEngine that,
     required CompiledDocument document,
     required String selector,
+  });
+
+  List<String> crateApiTypstTypstEngineScanPackageSpecs({
+    required TypstEngine that,
+    required String markup,
+    required List<VirtualFile> files,
   });
 
   String crateApiTypstGetTypstVersion();
@@ -404,6 +419,75 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       );
 
   @override
+  Future<List<String>> crateApiTypstTypstEngineAddPackageArchives({
+    required TypstEngine that,
+    required List<PackageArchive> archives,
+  }) {
+    return handler.executeNormal(
+      NormalTask(
+        callFfi: (port_) {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          sse_encode_Auto_RefMut_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerTypstEngine(
+            that,
+            serializer,
+          );
+          sse_encode_list_package_archive(archives, serializer);
+          pdeCallFfi(
+            generalizedFrbRustBinding,
+            serializer,
+            funcId: 8,
+            port: port_,
+          );
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_list_String,
+          decodeErrorData: sse_decode_String,
+        ),
+        constMeta: kCrateApiTypstTypstEngineAddPackageArchivesConstMeta,
+        argValues: [that, archives],
+        apiImpl: this,
+      ),
+    );
+  }
+
+  TaskConstMeta get kCrateApiTypstTypstEngineAddPackageArchivesConstMeta =>
+      const TaskConstMeta(
+        debugName: "TypstEngine_add_package_archives",
+        argNames: ["that", "archives"],
+      );
+
+  @override
+  List<String> crateApiTypstTypstEngineCachedPackageSpecs({
+    required TypstEngine that,
+  }) {
+    return handler.executeSync(
+      SyncTask(
+        callFfi: () {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          sse_encode_Auto_Ref_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerTypstEngine(
+            that,
+            serializer,
+          );
+          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 9)!;
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_list_String,
+          decodeErrorData: null,
+        ),
+        constMeta: kCrateApiTypstTypstEngineCachedPackageSpecsConstMeta,
+        argValues: [that],
+        apiImpl: this,
+      ),
+    );
+  }
+
+  TaskConstMeta get kCrateApiTypstTypstEngineCachedPackageSpecsConstMeta =>
+      const TaskConstMeta(
+        debugName: "TypstEngine_cached_package_specs",
+        argNames: ["that"],
+      );
+
+  @override
   Future<CompiledDocument> crateApiTypstTypstEngineCompile({
     required TypstEngine that,
     required String markup,
@@ -428,7 +512,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 8,
+            funcId: 10,
             port: port_,
           );
         },
@@ -463,7 +547,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       SyncTask(
         callFfi: () {
           final serializer = SseSerializer(generalizedFrbRustBinding);
-          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 9)!;
+          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 11)!;
         },
         codec: SseCodec(
           decodeSuccessData:
@@ -502,7 +586,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 10,
+            funcId: 12,
             port: port_,
           );
         },
@@ -524,12 +608,47 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       );
 
   @override
+  List<String> crateApiTypstTypstEngineScanPackageSpecs({
+    required TypstEngine that,
+    required String markup,
+    required List<VirtualFile> files,
+  }) {
+    return handler.executeSync(
+      SyncTask(
+        callFfi: () {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          sse_encode_Auto_Ref_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerTypstEngine(
+            that,
+            serializer,
+          );
+          sse_encode_String(markup, serializer);
+          sse_encode_list_virtual_file(files, serializer);
+          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 13)!;
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_list_String,
+          decodeErrorData: null,
+        ),
+        constMeta: kCrateApiTypstTypstEngineScanPackageSpecsConstMeta,
+        argValues: [that, markup, files],
+        apiImpl: this,
+      ),
+    );
+  }
+
+  TaskConstMeta get kCrateApiTypstTypstEngineScanPackageSpecsConstMeta =>
+      const TaskConstMeta(
+        debugName: "TypstEngine_scan_package_specs",
+        argNames: ["that", "markup", "files"],
+      );
+
+  @override
   String crateApiTypstGetTypstVersion() {
     return handler.executeSync(
       SyncTask(
         callFfi: () {
           final serializer = SseSerializer(generalizedFrbRustBinding);
-          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 11)!;
+          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 14)!;
         },
         codec: SseCodec(
           decodeSuccessData: sse_decode_String,
@@ -595,6 +714,15 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   ) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     return CompiledDocumentImpl.frbInternalDcoDecode(dcoDecodeList(raw));
+  }
+
+  @protected
+  TypstEngine
+  dco_decode_Auto_Ref_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerTypstEngine(
+    dynamic raw,
+  ) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return TypstEngineImpl.frbInternalDcoDecode(dcoDecodeList(raw));
   }
 
   @protected
@@ -688,6 +816,12 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  List<PackageArchive> dco_decode_list_package_archive(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return dcoDecodeList(raw).map(dco_decode_package_archive).toList();
+  }
+
+  @protected
   Uint8List dco_decode_list_prim_u_8_strict(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     return raw as Uint8List;
@@ -731,6 +865,18 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     return raw == null
         ? null
         : dco_decode_box_autoadd_typst_source_location(raw);
+  }
+
+  @protected
+  PackageArchive dco_decode_package_archive(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    final arr = dcoDecodeList(raw);
+    if (arr.length != 2)
+      throw Exception('unexpected arr length: expect 2 but see ${arr.length}');
+    return PackageArchive(
+      spec: dco_decode_String(arr[0]),
+      bytes: dco_decode_list_prim_u_8_strict(arr[1]),
+    );
   }
 
   @protected
@@ -897,6 +1043,18 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  TypstEngine
+  sse_decode_Auto_Ref_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerTypstEngine(
+    SseDeserializer deserializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    return TypstEngineImpl.frbInternalSseDecode(
+      sse_decode_usize(deserializer),
+      sse_decode_i_32(deserializer),
+    );
+  }
+
+  @protected
   Map<String, String> sse_decode_Map_String_String_None(
     SseDeserializer deserializer,
   ) {
@@ -1007,6 +1165,20 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  List<PackageArchive> sse_decode_list_package_archive(
+    SseDeserializer deserializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+
+    var len_ = sse_decode_i_32(deserializer);
+    var ans_ = <PackageArchive>[];
+    for (var idx_ = 0; idx_ < len_; ++idx_) {
+      ans_.add(sse_decode_package_archive(deserializer));
+    }
+    return ans_;
+  }
+
+  @protected
   Uint8List sse_decode_list_prim_u_8_strict(SseDeserializer deserializer) {
     // Codec=Sse (Serialization based), see doc to use other codecs
     var len_ = sse_decode_i_32(deserializer);
@@ -1088,6 +1260,14 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     } else {
       return null;
     }
+  }
+
+  @protected
+  PackageArchive sse_decode_package_archive(SseDeserializer deserializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    var var_spec = sse_decode_String(deserializer);
+    var var_bytes = sse_decode_list_prim_u_8_strict(deserializer);
+    return PackageArchive(spec: var_spec, bytes: var_bytes);
   }
 
   @protected
@@ -1248,6 +1428,19 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  void
+  sse_encode_Auto_Ref_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerTypstEngine(
+    TypstEngine self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_usize(
+      (self as TypstEngineImpl).frbInternalSseEncode(move: false),
+      serializer,
+    );
+  }
+
+  @protected
   void sse_encode_Map_String_String_None(
     Map<String, String> self,
     SseSerializer serializer,
@@ -1361,6 +1554,18 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  void sse_encode_list_package_archive(
+    List<PackageArchive> self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_i_32(self.length, serializer);
+    for (final item in self) {
+      sse_encode_package_archive(item, serializer);
+    }
+  }
+
+  @protected
   void sse_encode_list_prim_u_8_strict(
     Uint8List self,
     SseSerializer serializer,
@@ -1443,6 +1648,16 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     if (self != null) {
       sse_encode_box_autoadd_typst_source_location(self, serializer);
     }
+  }
+
+  @protected
+  void sse_encode_package_archive(
+    PackageArchive self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_String(self.spec, serializer);
+    sse_encode_list_prim_u_8_strict(self.bytes, serializer);
   }
 
   @protected
@@ -1624,6 +1839,19 @@ class TypstEngineImpl extends RustOpaque implements TypstEngine {
       .api
       .crateApiTypstTypstEngineAddFonts(that: this, fontData: fontData);
 
+  /// Injects downloaded archives and returns the specs that are still
+  /// unresolved (transitive dependencies the caller should fetch next).
+  Future<List<String>> addPackageArchives({
+    required List<PackageArchive> archives,
+  }) => RustLib.instance.api.crateApiTypstTypstEngineAddPackageArchives(
+    that: this,
+    archives: archives,
+  );
+
+  /// Returns the `@namespace/name:version` specs already cached by this engine.
+  List<String> cachedPackageSpecs() => RustLib.instance.api
+      .crateApiTypstTypstEngineCachedPackageSpecs(that: this);
+
   /// Compile Typst markup into a CompiledDocument handle.
   Future<CompiledDocument> compile({
     required String markup,
@@ -1647,5 +1875,16 @@ class TypstEngineImpl extends RustOpaque implements TypstEngine {
     that: this,
     document: document,
     selector: selector,
+  );
+
+  /// Returns the `@namespace/name:version` specs referenced by [markup] and
+  /// by any `.typ` file in [files].
+  List<String> scanPackageSpecs({
+    required String markup,
+    required List<VirtualFile> files,
+  }) => RustLib.instance.api.crateApiTypstTypstEngineScanPackageSpecs(
+    that: this,
+    markup: markup,
+    files: files,
   );
 }

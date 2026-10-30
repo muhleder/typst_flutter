@@ -212,6 +212,11 @@ impl SimpleWorld {
         }
     }
 
+    /// Read-only access to the package resolver (spec scanning, cache state).
+    pub(crate) fn resolver(&self) -> &PackageResolver {
+        &self.package_resolver
+    }
+
     pub(crate) fn set_allow_packages(&mut self, allow: bool) {
         self.package_resolver.set_allow_packages(allow);
     }

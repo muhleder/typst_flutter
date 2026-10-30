@@ -8,7 +8,7 @@
 import '../frb_generated.dart';
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 
-// These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `assert_receiver_is_total_eq`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `eq`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`
+// These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `assert_receiver_is_total_eq`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `eq`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`
 
 String getTypstVersion() => RustLib.instance.api.crateApiTypstGetTypstVersion();
 
@@ -44,6 +44,15 @@ abstract class TypstEngine implements RustOpaqueInterface {
   /// Adds additional fonts to the engine.
   Future<void> addFonts({required List<Uint8List> fontData});
 
+  /// Injects downloaded archives and returns the specs that are still
+  /// unresolved (transitive dependencies the caller should fetch next).
+  Future<List<String>> addPackageArchives({
+    required List<PackageArchive> archives,
+  });
+
+  /// Returns the `@namespace/name:version` specs already cached by this engine.
+  List<String> cachedPackageSpecs();
+
   /// Compile Typst markup into a CompiledDocument handle.
   Future<CompiledDocument> compile({
     required String markup,
@@ -60,6 +69,39 @@ abstract class TypstEngine implements RustOpaqueInterface {
     required CompiledDocument document,
     required String selector,
   });
+
+  /// Returns the `@namespace/name:version` specs referenced by [markup] and
+  /// by any `.typ` file in [files].
+  List<String> scanPackageSpecs({
+    required String markup,
+    required List<VirtualFile> files,
+  });
+}
+
+/// A Typst package archive that the caller downloaded.
+///
+/// Web builds cannot reach the network while compiling (`World::file` is
+/// synchronous), so the caller fetches archives and hands them over before
+/// `compile()` runs.
+class PackageArchive {
+  /// Package spec in `@namespace/name:version` form.
+  final String spec;
+
+  /// Raw `.tar.gz` bytes as served by the registry.
+  final Uint8List bytes;
+
+  const PackageArchive({required this.spec, required this.bytes});
+
+  @override
+  int get hashCode => spec.hashCode ^ bytes.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is PackageArchive &&
+          runtimeType == other.runtimeType &&
+          spec == other.spec &&
+          bytes == other.bytes;
 }
 
 class PageInfo {

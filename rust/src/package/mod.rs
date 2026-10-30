@@ -186,6 +186,39 @@ impl PackageResolver {
         self.ensure_package(spec).map(|_| ())
     }
 
+    /// Injects an already-downloaded package archive into the cache and returns
+    /// any package specs it newly references (transitive dependencies).
+    ///
+    /// This is the web prefetch path: the browser cannot download during
+    /// compilation, so the caller fetches archives and hands them over here.
+    pub(crate) fn insert_package_archive(
+        &self,
+        spec: &PackageSpec,
+        compressed: &[u8],
+    ) -> Result<Vec<PackageSpec>, FileError> {
+        let files = Self::unpack_package_archive(compressed, spec)?;
+
+        let mut referenced = Vec::new();
+        for (path, bytes) in &files {
+            if path.ends_with(".typ")
+                && let Ok(text) = std::str::from_utf8(bytes)
+            {
+                self.collect_package_specs(text, &mut referenced);
+            }
+        }
+
+        let mut cache = self
+            .cache
+            .write()
+            .map_err(|e| PackageError::Lock(e.to_string()))?;
+        cache.insert(spec.clone(), files);
+
+        referenced.retain(|candidate| candidate != spec && !cache.contains_key(candidate));
+        let mut seen = HashSet::new();
+        referenced.retain(|candidate| seen.insert(candidate.clone()));
+        Ok(referenced)
+    }
+
     /// Decompresses and extracts a package tar.gz archive in memory.
     // Also used on web, by the caller-side archive injection path.
     #[cfg_attr(target_family = "wasm", allow(dead_code))]
@@ -644,6 +677,73 @@ mod tests {
         let file_res =
             resolver.resolve_package_file(&spec, &VirtualPath::new("typst.toml").unwrap());
         assert!(file_res.is_ok());
+    }
+
+    /// Builds a `.tar.gz` with the given (path, contents) entries.
+    fn gz_tar(entries: &[(&str, &str)]) -> Vec<u8> {
+        use flate2::Compression;
+        use flate2::write::GzEncoder;
+        use tar::Builder;
+
+        let mut encoder = GzEncoder::new(Vec::new(), Compression::default());
+        {
+            let mut builder = Builder::new(&mut encoder);
+            for (path, contents) in entries {
+                let mut header = tar::Header::new_gnu();
+                header.set_size(contents.len() as u64);
+                header.set_mode(0o644);
+                header.set_cksum();
+                builder
+                    .append_data(&mut header, path, contents.as_bytes())
+                    .unwrap();
+            }
+            builder.finish().unwrap();
+        }
+        encoder.finish().unwrap()
+    }
+
+    fn preview_spec(name: &str, major: u32, minor: u32, patch: u32) -> PackageSpec {
+        PackageSpec {
+            namespace: "preview".into(),
+            name: name.into(),
+            version: typst::syntax::package::PackageVersion {
+                major,
+                minor,
+                patch,
+            },
+        }
+    }
+
+    #[test]
+    fn test_insert_package_archive_reports_transitive_specs() {
+        let resolver = PackageResolver::new();
+        let spec = preview_spec("outer", 0, 1, 0);
+        let archive = gz_tar(&[
+            (
+                "typst.toml",
+                "[package]\nname = \"outer\"\nversion = \"0.1.0\"\nentrypoint = \"lib.typ\"\n",
+            ),
+            ("lib.typ", "#import \"@preview/inner:0.2.0\": *\n= Outer\n"),
+        ]);
+
+        let unresolved = resolver.insert_package_archive(&spec, &archive).unwrap();
+
+        assert_eq!(unresolved.len(), 1);
+        assert_eq!(unresolved[0].to_string(), "@preview/inner:0.2.0");
+        assert!(resolver.cache.read().unwrap().contains_key(&spec));
+    }
+
+    #[test]
+    fn test_insert_package_archive_twice_is_idempotent() {
+        let resolver = PackageResolver::new();
+        let spec = preview_spec("outer", 0, 1, 0);
+        let archive = gz_tar(&[("lib.typ", "= Outer\n")]);
+
+        resolver.insert_package_archive(&spec, &archive).unwrap();
+        let second = resolver.insert_package_archive(&spec, &archive).unwrap();
+
+        assert!(second.is_empty());
+        assert_eq!(resolver.cache.read().unwrap().len(), 1);
     }
 
     #[test]

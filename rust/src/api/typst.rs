@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 
 use flutter_rust_bridge::frb;
+use typst::syntax::package::PackageSpec;
 use typst_layout::PagedDocument;
 use typst_utils::Scalar;
 
@@ -19,6 +20,19 @@ pub struct VirtualFile {
     /// The virtual path as referenced in Typst markup.
     pub path: String,
     /// The raw file bytes.
+    pub bytes: Vec<u8>,
+}
+
+/// A Typst package archive that the caller downloaded.
+///
+/// Web builds cannot reach the network while compiling (`World::file` is
+/// synchronous), so the caller fetches archives and hands them over before
+/// `compile()` runs.
+#[derive(Debug, Clone)]
+pub struct PackageArchive {
+    /// Package spec in `@namespace/name:version` form.
+    pub spec: String,
+    /// Raw `.tar.gz` bytes as served by the registry.
     pub bytes: Vec<u8>,
 }
 
@@ -221,6 +235,59 @@ impl TypstEngine {
             inner: document,
             warnings,
         })
+    }
+
+    /// Returns the `@namespace/name:version` specs referenced by [markup] and
+    /// by any `.typ` file in [files].
+    #[frb(sync)]
+    pub fn scan_package_specs(&self, markup: &str, files: Vec<VirtualFile>) -> Vec<String> {
+        let mut specs = Vec::new();
+        self.world.resolver().collect_package_specs(markup, &mut specs);
+        for file in &files {
+            // No let-chains here: the `#[frb]` macro expands this body in a
+            // 2021-edition context, where they are not allowed.
+            if !file.path.ends_with(".typ") {
+                continue;
+            }
+            let Ok(text) = std::str::from_utf8(&file.bytes) else {
+                continue;
+            };
+            self.world.resolver().collect_package_specs(text, &mut specs);
+        }
+        specs.iter().map(|spec| spec.to_string()).collect()
+    }
+
+    /// Returns the `@namespace/name:version` specs already cached by this engine.
+    #[frb(sync)]
+    pub fn cached_package_specs(&self) -> Vec<String> {
+        self.world
+            .resolver()
+            .cache
+            .read()
+            .map(|cache| cache.keys().map(|spec| spec.to_string()).collect())
+            .unwrap_or_default()
+    }
+
+    /// Injects downloaded archives and returns the specs that are still
+    /// unresolved (transitive dependencies the caller should fetch next).
+    pub fn add_package_archives(
+        &mut self,
+        archives: Vec<PackageArchive>,
+    ) -> Result<Vec<String>, String> {
+        let mut unresolved = Vec::new();
+        for archive in archives {
+            let spec: PackageSpec = archive
+                .spec
+                .parse()
+                .map_err(|e| format!("invalid package spec '{}': {e}", archive.spec))?;
+            let referenced = self
+                .world
+                .resolver()
+                .insert_package_archive(&spec, &archive.bytes)
+                .map_err(|e| format!("failed to load {spec}: {e}"))?;
+            unresolved.extend(referenced.iter().map(|spec| spec.to_string()));
+        }
+        Ok(unresolved)
     }
 
     pub fn query(
