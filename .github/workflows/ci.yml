@@ -178,19 +178,16 @@ jobs:
         run: |
           cargo install wasm-pack
           cargo install flutter_rust_bridge_codegen --version 2.14.0-beta.2 --locked
-      - name: Run the browser tests (dart2wasm)
+      - name: Run the browser tests
         working-directory: example
         run: |
           flutter pub get
+          # One chromedriver for both runs; starting it twice fails on the port.
           chromedriver --port=4444 &
           flutter drive --driver=test_driver/integration_test.dart \
             --target=integration_test/web_test.dart -d chrome --wasm \
             --web-header=Cross-Origin-Opener-Policy=same-origin \
             --web-header=Cross-Origin-Embedder-Policy=require-corp
-      - name: Run the browser tests (JavaScript)
-        working-directory: example
-        run: |
-          chromedriver --port=4444 &
           flutter drive --driver=test_driver/integration_test.dart \
             --target=integration_test/web_test.dart -d chrome \
             --web-header=Cross-Origin-Opener-Policy=same-origin \

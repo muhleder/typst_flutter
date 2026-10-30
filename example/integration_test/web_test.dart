@@ -41,7 +41,9 @@ void main() {
 
   testWidgets('TypstView renders a page in the browser', (tester) async {
     await tester.pumpWidget(
-      const MaterialApp(home: Scaffold(body: TypstView.source(source: '= Hi'))),
+      const MaterialApp(
+        home: Scaffold(body: TypstView.source(source: '= Hi')),
+      ),
     );
 
     // TypstView shows a progress indicator while compiling, so pumpAndSettle

@@ -88,11 +88,13 @@ class TypstWebSetupException extends TypstException {
 /// codegen-version check), and the page was served without the headers the
 /// threaded wasm needs.
 TypstWebSetupException describeInitFailure(Object error) {
-  final text = error.toString();
+  // flutter_rust_bridge throws StateError('Content hash …') and
+  // StateError('<stem>\'s codegen version …'), both capitalised.
+  final text = error.toString().toLowerCase();
   final stale =
       text.contains('content hash') ||
       text.contains('codegen') ||
-      text.contains('flutter_rust_bridge_codegen');
+      text.contains('out-of-sync');
 
   if (stale) {
     return TypstWebSetupException(

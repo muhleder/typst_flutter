@@ -20,7 +20,7 @@ void main(List<String> args) async {
   }
 
   final options = SetupOptions.parse(args);
-  final setup = _Setup(options);
+  final setup = SetupRunner(options);
   await setup.run();
 }
 
@@ -181,16 +181,32 @@ List<_Artifact> _allArtifacts() => [
 
 // ── Setup orchestrator ───────────────────────────────────────────────────────
 
-class _Setup {
-  _Setup(this._opts);
+class SetupRunner {
+  /// Creates a runner.
+  ///
+  /// Every dependency that touches the outside world is injectable so the
+  /// whole flow — native artifacts and the web bundle — can be tested without
+  /// a release or a real app directory.
+  SetupRunner(
+    this._opts, {
+    Future<http.Response> Function(Uri url)? httpGet,
+    String? packageRoot,
+    String? workingDirectory,
+  }) : _httpGet = httpGet ?? http.get,
+       _packageRootOverride = packageRoot,
+       _workingDirectory = workingDirectory;
+
   final SetupOptions _opts;
+  final Future<http.Response> Function(Uri url) _httpGet;
+  final String? _packageRootOverride;
+  final String? _workingDirectory;
 
   late final String _packageRoot;
   late final String _version;
-  late final Map<String, String> _sha256sums;
+  Map<String, String> _sha256sums = {};
 
   Future<void> run() async {
-    _packageRoot = await _findPackageRoot();
+    _packageRoot = _packageRootOverride ?? await _findPackageRoot();
     _version = _opts.version ?? _readVersion();
 
     print('╔══════════════════════════════════════════════════╗');
@@ -202,10 +218,15 @@ class _Setup {
     print('  Verify SHA   : ${!_opts.noVerify}');
     print('');
 
-    // Check if already up-to-date
+    // Check if the native libraries are already up-to-date. The web bundle is
+    // tracked separately (it lives in the app, not the package), so --web must
+    // still run when the native stamp matches.
     if (!_opts.force && _isUpToDate()) {
       print('✓ Pre-built libraries for v$_version are already present.');
       print('  (Run with --force to re-download.)');
+      if (_opts.includeWeb) {
+        await _downloadWeb();
+      }
       return;
     }
 
@@ -269,13 +290,19 @@ class _Setup {
   /// working directory's `web/pkg`, which is what a browser serves.
   Future<void> _downloadWeb() async {
     const assetName = 'typst_flutter_web.tar.gz';
-    final cwd = Directory.current.path;
+    final cwd = _workingDirectory ?? Directory.current.path;
     final destination = _opts.webDestinationFor(cwd);
     final stampPath = _opts.webVersionStampFor(cwd);
 
     print('');
     print('── Web (WebAssembly) ──────────────────────────────────────');
     print('  Destination  : $destination');
+
+    // The native path may have returned before fetching checksums.
+    if (!_opts.noVerify && _sha256sums.isEmpty) {
+      print('⟳ Fetching SHA256SUMS …');
+      _sha256sums = await _fetchChecksums();
+    }
 
     final stamp = File(stampPath);
     if (!_opts.force &&
@@ -290,7 +317,7 @@ class _Setup {
         'https://github.com/$_repoOwner/$_repoName/releases/download/v$_version/$assetName';
     print('⟳ $assetName');
 
-    final response = await http.get(Uri.parse(url));
+    final response = await _httpGet(Uri.parse(url));
     if (response.statusCode == 404) {
       throw Exception(
         'Web bundle not found on GitHub Releases (HTTP 404). '
@@ -367,7 +394,7 @@ class _Setup {
     if (!destDir.existsSync()) destDir.createSync(recursive: true);
 
     // Download to memory
-    final response = await http.get(Uri.parse(url));
+    final response = await _httpGet(Uri.parse(url));
 
     if (response.statusCode == 404) {
       throw Exception(
@@ -417,7 +444,7 @@ class _Setup {
     final baseUrl =
         'https://github.com/$_repoOwner/$_repoName'
         '/releases/download/v$_version/SHA256SUMS';
-    final response = await http.get(Uri.parse(baseUrl));
+    final response = await _httpGet(Uri.parse(baseUrl));
 
     if (response.statusCode != 200) {
       print(

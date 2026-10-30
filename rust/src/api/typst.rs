@@ -242,7 +242,9 @@ impl TypstEngine {
     #[frb(sync)]
     pub fn scan_package_specs(&self, markup: &str, files: Vec<VirtualFile>) -> Vec<String> {
         let mut specs = Vec::new();
-        self.world.resolver().collect_package_specs(markup, &mut specs);
+        self.world
+            .resolver()
+            .collect_package_specs(markup, &mut specs);
         for file in &files {
             // No let-chains here: the `#[frb]` macro expands this body in a
             // 2021-edition context, where they are not allowed.
@@ -252,7 +254,9 @@ impl TypstEngine {
             let Ok(text) = std::str::from_utf8(&file.bytes) else {
                 continue;
             };
-            self.world.resolver().collect_package_specs(text, &mut specs);
+            self.world
+                .resolver()
+                .collect_package_specs(text, &mut specs);
         }
         specs.iter().map(|spec| spec.to_string()).collect()
     }

@@ -44,6 +44,21 @@ class TypstCompiler {
   final String _packageRegistryUrl;
   final http.Client _httpClient;
 
+  /// Tail of the queue that serialises calls made through this compiler.
+  ///
+  /// The engine is stateful (`compile` mutates the world before running) and
+  /// the scans that precede it are `#[frb(sync)]` on web, where such a call
+  /// fails immediately instead of waiting for a lock another call holds. A
+  /// widget can legitimately fire an un-awaited recompile on every keystroke,
+  /// so calls are chained here rather than allowed to overlap.
+  Future<void> _queue = Future<void>.value();
+
+  Future<T> _serialize<T>(Future<T> Function() action) {
+    final result = _queue.then((_) => action());
+    _queue = result.then((_) {}, onError: (Object _) {});
+    return result;
+  }
+
   /// Releases the native resources associated with this compiler.
   ///
   /// After calling this, the compiler instance is no longer usable and any
@@ -79,7 +94,15 @@ class TypstCompiler {
       // once. We ignore this specific error to remain robust in tests.
       // ignore: avoid_catching_errors
     } on StateError catch (e) {
-      if (!e.message.contains('twice')) rethrow;
+      // flutter_rust_bridge throws a StateError both when init() runs twice
+      // and when the wasm bundle was built from a different version.
+      if (e.message.contains('twice')) {
+        // already initialised; fine
+      } else if (kIsWeb) {
+        throw describeInitFailure(e);
+      } else {
+        rethrow;
+      }
     } on TypstWebSetupException {
       rethrow;
     } on Object catch (e) {
@@ -96,8 +119,7 @@ class TypstCompiler {
     }
     return TypstCompiler._(
       engine: engine,
-      packageRegistryUrl:
-          packageRegistryUrl ?? TypstFlutter.packageRegistryUrl,
+      packageRegistryUrl: packageRegistryUrl ?? TypstFlutter.packageRegistryUrl,
       httpClient: httpClient ?? http.Client(),
     );
   }
@@ -132,16 +154,16 @@ class TypstCompiler {
     DateTime? date,
     Map<String, String>? inputs,
     bool allowPackages = true,
-  }) async {
+  }) => _serialize(() async {
     final virtualFiles = await _buildVirtualFiles(files);
-    if (kIsWeb && allowPackages) {
-      await PackagePrefetcher(
-        EnginePackageSource(_engine),
-        registryUrl: _packageRegistryUrl,
-        httpClient: _httpClient,
-      ).prefetch(markup: source, files: virtualFiles);
-    }
     try {
+      if (kIsWeb && allowPackages) {
+        await PackagePrefetcher(
+          EnginePackageSource(_engine),
+          registryUrl: _packageRegistryUrl,
+          httpClient: _httpClient,
+        ).prefetch(markup: source, files: virtualFiles);
+      }
       final inner = await _engine.compile(
         markup: source,
         files: virtualFiles,
@@ -155,10 +177,13 @@ class TypstCompiler {
         'Compilation failed',
         diagnostics: e.diagnostics,
       );
+    } on TypstCompileException {
+      // Already actionable (a package download failure names the spec).
+      rethrow;
     } catch (e) {
       throw TypstCompileException('$e');
     }
-  }
+  });
 
   /// Returns the version string of the embedded Typst compiler engine.
   String get compilerVersion => api.getTypstVersion();
@@ -169,7 +194,9 @@ class TypstCompiler {
   Future<String> query({
     required TypstDocument document,
     required String selector,
-  }) async => await _engine.query(document: document.inner, selector: selector);
+  }) => _serialize(
+    () => _engine.query(document: document.inner, selector: selector),
+  );
 
   // ── Helpers ────────────────────────────────────────────────────────────────
 

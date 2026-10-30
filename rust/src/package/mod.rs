@@ -20,7 +20,9 @@ pub(crate) enum PackageError {
     // Only constructed on web (the native path downloads instead); the message
     // is still part of the native API surface and is covered by a unit test.
     #[cfg_attr(not(target_family = "wasm"), allow(dead_code))]
-    #[error("package {0} is not available locally; the caller must prefetch it (web builds cannot download packages during compilation)")]
+    #[error(
+        "package {0} is not available locally; the caller must prefetch it (web builds cannot download packages during compilation)"
+    )]
     NotPrefetched(PackageSpec),
 
     #[error("unsupported package namespace '{0}' (only '@preview' is supported)")]
@@ -527,10 +529,7 @@ mod tests {
             },
         };
         let msg = PackageError::NotPrefetched(spec).to_string();
-        assert!(
-            msg.contains("prefetch"),
-            "message must name the fix: {msg}"
-        );
+        assert!(msg.contains("prefetch"), "message must name the fix: {msg}");
         assert!(
             msg.contains("@preview/cetz:0.3.4"),
             "message must name the spec: {msg}"

@@ -2,17 +2,39 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 
+/// True when [path] is hand-written library code (the generated bridge under
+/// `lib/src/rust/` legitimately imports `dart:ffi` behind a conditional
+/// import). Separators are normalised because the directory walk yields
+/// platform-native paths: on Windows they arrive as `lib\src\rust\...`.
+bool isHandWrittenLibFile(String path) =>
+    !path.replaceAll(r'\', '/').startsWith('lib/src/rust/');
+
+/// True when [source] imports `dart:io` or `dart:ffi`.
+bool importsPlatformOnlyLibrary(String source) =>
+    RegExp(r'''import\s+'dart:(io|ffi)''').hasMatch(source);
+
 void main() {
+  group('isHandWrittenLibFile', () {
+    test('accepts either separator style', () {
+      expect(isHandWrittenLibFile('lib/src/compiler.dart'), isTrue);
+      expect(isHandWrittenLibFile(r'lib\src\compiler.dart'), isTrue);
+      expect(
+        isHandWrittenLibFile('lib/src/rust/frb_generated.io.dart'),
+        isFalse,
+      );
+      expect(
+        isHandWrittenLibFile(r'lib\src\rust\frb_generated.io.dart'),
+        isFalse,
+      );
+    });
+  });
+
   test('lib/ never imports dart:io or dart:ffi', () {
     final offenders = <String>[];
-    final pattern = RegExp(r'''import\s+'dart:(io|ffi)''');
-
     for (final entity in Directory('lib').listSync(recursive: true)) {
       if (entity is! File || !entity.path.endsWith('.dart')) continue;
-      // Generated bridge code: the .io variant is only imported on native
-      // platforms through a conditional import, so it may use dart:ffi.
-      if (entity.path.startsWith('lib/src/rust/')) continue;
-      if (pattern.hasMatch(entity.readAsStringSync())) {
+      if (!isHandWrittenLibFile(entity.path)) continue;
+      if (importsPlatformOnlyLibrary(entity.readAsStringSync())) {
         offenders.add(entity.path);
       }
     }
