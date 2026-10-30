@@ -1,5 +1,3 @@
-import 'dart:ffi';
-
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 import 'package:typst_flutter/src/document.dart';
 import 'package:typst_flutter/src/exceptions.dart';
@@ -26,7 +24,7 @@ import 'package:typst_flutter/src/rust/frb_generated.dart';
 /// final pdfBytes = await doc.exportPdf();
 /// final result = await doc.renderRaster(pageIndex: 0);
 /// ```
-class TypstCompiler implements Finalizable {
+class TypstCompiler {
   TypstCompiler._({required api.TypstEngine engine}) : _engine = engine;
 
   /// The underlying stateful Rust engine.

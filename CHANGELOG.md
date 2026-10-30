@@ -1,3 +1,11 @@
+## 3.1.0-beta.1
+
+### Breaking-ish
+
+- `TypstCompiler` no longer implements `dart:ffi`'s `Finalizable`. The marker
+  interface made `lib/` unbuildable for web; `dispose()` is unchanged and remains
+  the way to release native resources.
+
 ## 3.0.0
 
 ### New Features & Performance
