@@ -402,9 +402,9 @@ void main() {
 }
 
 void _pdfAvailabilityTests() {
-  test('supportsPdfExport is true off the web', () {
-    // The web case is covered by the browser e2e; this pins that native code
-    // paths keep the feature.
+  test('supportsPdfExport is true', () {
+    // The web case is covered by the browser e2e, which exports for real; this
+    // pins the answer a caller branches on, on the platform that can check it.
     expect(TypstDocument.supportsPdfExport, isTrue);
   });
 }

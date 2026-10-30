@@ -32,19 +32,12 @@ void main() {
     expect(raster.height, greaterThan(0));
     expect(raster.bytes.length, raster.width * raster.height * 4);
 
-    // PDF export is documented as unavailable on web: it must fail loudly
-    // rather than hang (krilla's rayon::spawn never runs in a browser).
-    expect(TypstDocument.supportsPdfExport, isFalse);
-    await expectLater(
-      document.exportPdf(),
-      throwsA(
-        isA<TypstRenderException>().having(
-          (e) => e.message,
-          'message',
-          contains('not available in web builds'),
-        ),
-      ),
-    );
+    // The export runs on a pool the calling thread owns, so krilla's deferred
+    // chunks have somewhere to run: it must answer a whole PDF, not hang.
+    expect(TypstDocument.supportsPdfExport, isTrue);
+    final pdf = await document.exportPdf();
+    expect(String.fromCharCodes(pdf.take(5)), '%PDF-');
+    expect(String.fromCharCodes(pdf.skip(pdf.length - 6)).trim(), '%%EOF');
 
     document.dispose();
     compiler.dispose();

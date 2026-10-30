@@ -1,7 +1,6 @@
 import 'dart:typed_data';
 import 'dart:ui' as ui;
 
-import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:meta/meta.dart';
 import 'package:typst_flutter/src/exceptions.dart';
 import 'package:typst_flutter/src/rust/api/typst.dart' as api;
@@ -78,17 +77,23 @@ class TypstDocument {
 
   /// Whether [exportPdf] can be used on the current platform.
   ///
-  /// `false` in web builds: `typst_pdf` hands font subsetting to `krilla`,
-  /// which dispatches it with `rayon::spawn` and then blocks on the result.
-  /// A browser build cannot run rayon workers (its only threads are
-  /// flutter_rust_bridge's Web Workers), so the export would block forever.
-  /// Use [renderSvg] or [renderRaster] there, or export PDF natively.
-  static bool get supportsPdfExport => !kIsWeb;
+  /// `true` everywhere, including web builds: the writer's deferred work runs
+  /// on a rayon pool the calling thread owns, so a browser completes the export
+  /// instead of blocking on workers it cannot spawn (see `on_pdf_thread` in
+  /// `rust/src/api/typst.rs`).
+  ///
+  /// Kept as a capability question rather than removed, because a caller
+  /// branches on it: this package shipped with the answer `false` on the web,
+  /// and an app that reports an unavailable export is better than one that
+  /// starts a call whose support it cannot know.
+  static bool get supportsPdfExport => true;
 
   /// Exports the entire document to a raw PDF byte array.
   ///
-  /// Throws [TypstRenderException] if the PDF export fails, which on web is
-  /// always: see [supportsPdfExport] for why.
+  /// On the web this runs single-threaded inside the calling thread, which is
+  /// what a browser allows; every other platform uses typst's own thread pool.
+  ///
+  /// Throws [TypstRenderException] if the PDF export fails.
   Future<Uint8List> exportPdf() async {
     _checkNotDisposed();
     try {

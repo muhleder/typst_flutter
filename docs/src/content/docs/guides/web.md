@@ -115,13 +115,14 @@ headers in front of it.
 - **Typst's layout runs single-threaded** inside one worker thread. The
   compile itself never blocks the UI thread, but a document does not
   parallelise internally the way it does on a desktop.
-- **PDF export is not available.** `TypstDocument.exportPdf()` throws a
-  `TypstRenderException` explaining this; `TypstDocument.supportsPdfExport` is
-  `false`. `typst_pdf` delegates font subsetting to `krilla`, which hands work
-  to `rayon::spawn` and then blocks waiting for it; a browser build can only
-  run flutter_rust_bridge's own Web Workers, so that work never completes and
-  the call would hang instead of failing. Export PDF on a native platform, or
-  render pages with `renderSvg`/`renderRaster` and print those.
+- **PDF export runs on the calling thread.** `typst_pdf` -> `krilla` hands its
+  per-page streams, font subsets and images to `rayon::spawn` and blocks on the
+  result, and a browser cannot spawn rayon workers: rayon's wasm fallback pool is
+  one worker, owned by whichever thread first touched rayon. A `spawn` from any
+  other thread is queued where nothing runs it, so the export used to block for
+  ever. It now runs inside a pool the calling thread owns, which makes the export
+  synchronous and single-threaded - it does not block the UI thread (that work is
+  already on a Web Worker), but it does not parallelise either.
 - **There is no filesystem.** Pass images, data files and includes with
   `FileSource.bytes` (or `FileSource.assets`) rather than reading from disk.
 - **Custom registries**: point the prefetcher somewhere else with

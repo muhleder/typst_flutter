@@ -30,6 +30,9 @@ ureq = "3"
 
 [target.'cfg(target_family = "wasm")'.dependencies]
 js-sys = "0.3"
+# The PDF writer's deferred work runs on a pool the calling thread owns: a browser
+# has no rayon workers of its own (see `on_pdf_thread` in `src/api/typst.rs`).
+rayon = "1"
 
 [profile.release]
 opt-level = "z"      # optimise for binary size

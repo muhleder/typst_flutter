@@ -98,29 +98,47 @@ pub struct TypstCompileError {
     pub diagnostics: Vec<TypstDiagnostic>,
 }
 
-// ── PDF availability ────────────────────────────────────────────────────────
+// ── Running the PDF writer ──────────────────────────────────────────────────
 
-/// Why PDF export is not available in this build, if it is not.
+/// Runs the PDF writer where `krilla`'s deferred work can actually run.
 ///
-/// `typst_pdf` -> `krilla`, whose font subsetting wraps work in
-/// `rayon::spawn` and then blocks on an `OnceLock`
-/// (`krilla-0.8.x/src/util.rs`, `Deferred::new` / `Deferred::wait`). In the
-/// browser the rayon global pool cannot start workers it can rely on — the
-/// only threads available are flutter_rust_bridge's own Web Workers, and a
-/// rayon worker spawned from inside one never runs its loop. When the
-/// subsetting work is small enough to be executed inline by
-/// `rayon::yield_now` the export happens to succeed, which is why it looked
-/// like it worked until a document used real style fonts; beyond that the
-/// call blocks inside Rust forever, with no exception and nothing in the
-/// console. Failure is made explicit rather than left to chance.
-pub(crate) const PDF_UNAVAILABLE_ON_WEB: &str = "PDF export is not available in web builds: krilla's font subsetting dispatches work to rayon::spawn, and the browser build cannot run rayon workers (the only threads are flutter_rust_bridge's Web Workers). The export would block forever rather than fail. Use a native platform for PDF, or render pages with renderSvg/renderRaster on the web.";
-
-/// Returns [PDF_UNAVAILABLE_ON_WEB] on wasm and `None` everywhere else.
-pub(crate) fn pdf_unavailable_reason() -> Option<&'static str> {
-    if cfg!(target_family = "wasm") {
-        Some(PDF_UNAVAILABLE_ON_WEB)
-    } else {
-        None
+/// `typst_pdf` -> `krilla` hands its per-page streams, font subsets and image
+/// chunks to `rayon::spawn` and then blocks on the result
+/// (`krilla-0.8.x/src/util.rs`, `Deferred::new` / `Deferred::wait`, whose
+/// `wait` drains the queue with `rayon::yield_now` before it blocks).
+///
+/// On a browser that only works if the calling thread is a member of the pool it
+/// is draining: rayon cannot spawn threads on `wasm32-unknown-unknown`, so its
+/// global registry is a **fallback** pool - one worker, owned by whichever thread
+/// first touched rayon, `use_current_thread()` (`rayon-core/src/registry.rs`,
+/// `default_global_registry`) - and a `spawn` from any other thread is queued
+/// where nothing will run it. The export then blocks for ever, which is exactly
+/// what used to happen: `par_iter` (typst's own layout) works in the fallback,
+/// while `spawn`-then-block does not, so a small document sometimes finished and a
+/// real one never did.
+///
+/// So on wasm the conversion runs inside a pool **this thread owns**: it becomes
+/// that pool's worker for the duration of the call, its `yield_now` finds the
+/// spawned chunks on its own queue, and the export is synchronous and
+/// single-threaded - which is all a browser has to give it. Native platforms keep
+/// the real global pool and just call through.
+fn on_pdf_thread<T, F>(f: F) -> Result<T, String>
+where
+    F: FnOnce() -> Result<T, String> + Send,
+    T: Send,
+{
+    #[cfg(target_family = "wasm")]
+    {
+        let pool = ::rayon::ThreadPoolBuilder::new()
+            .num_threads(1)
+            .use_current_thread()
+            .build()
+            .map_err(|e| format!("could not run the PDF writer on this thread: {e:?}"))?;
+        pool.install(f)
+    }
+    #[cfg(not(target_family = "wasm"))]
+    {
+        f()
     }
 }
 
@@ -183,11 +201,14 @@ impl CompiledDocument {
     }
 
     /// Exports the document to a PDF byte array.
+    ///
+    /// Runs on [`on_pdf_thread`] because the writer's own work is deferred onto
+    /// rayon: see that function for what a browser does and does not give it.
     pub fn export_pdf(&self) -> Result<Vec<u8>, String> {
-        if let Some(reason) = pdf_unavailable_reason() {
-            return Err(reason.to_string());
-        }
-        typst_pdf::pdf(&self.inner, &typst_pdf::PdfOptions::default()).map_err(|e| format!("{e:?}"))
+        on_pdf_thread(|| {
+            typst_pdf::pdf(&self.inner, &typst_pdf::PdfOptions::default())
+                .map_err(|e| format!("{e:?}"))
+        })
     }
 
     /// Exports a specific page to an SVG string.
@@ -380,24 +401,32 @@ pub fn get_typst_version() -> String {
 }
 
 #[cfg(test)]
-mod pdf_availability_tests {
+mod pdf_thread_tests {
     use super::*;
 
     #[test]
-    fn pdf_export_stays_available_on_native() {
-        assert!(
-            pdf_unavailable_reason().is_none(),
-            "native builds must keep exporting PDF"
+    fn the_pdf_writer_returns_what_it_was_asked_for() {
+        assert_eq!(on_pdf_thread(|| Ok(42)).unwrap(), 42);
+    }
+
+    #[test]
+    fn a_failure_inside_the_writer_is_passed_through() {
+        assert_eq!(
+            on_pdf_thread::<(), _>(|| Err("no pdf today".to_string())).unwrap_err(),
+            "no pdf today"
         );
     }
 
     #[test]
-    fn the_web_message_names_the_cause_and_the_way_out() {
-        // The message users see on web: it has to name the workaround, not
-        // just the failure, because there is nothing they can retry.
-        assert!(PDF_UNAVAILABLE_ON_WEB.contains("not available"));
-        assert!(PDF_UNAVAILABLE_ON_WEB.contains("rayon"));
-        assert!(PDF_UNAVAILABLE_ON_WEB.contains("renderSvg"));
+    fn a_native_build_exports_pdf_without_a_pool_of_its_own() {
+        // The wasm branch is what a browser exercises (browser e2e, and the
+        // harness a consuming app keeps); this pins that the path is still
+        // compiled and working everywhere else.
+        let mut engine = TypstEngine::new();
+        let doc = engine
+            .compile("= Hello".to_string(), vec![], None, None, true)
+            .unwrap();
+        assert!(doc.export_pdf().unwrap().starts_with(b"%PDF"));
     }
 }
 

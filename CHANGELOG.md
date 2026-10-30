@@ -22,14 +22,16 @@
   - The web build requires cross-origin isolation:
     `Cross-Origin-Opener-Policy: same-origin` and
     `Cross-Origin-Embedder-Policy: require-corp`.
-  - **PDF export is native-only.** `TypstDocument.exportPdf()` throws a
-    `TypstRenderException` on web and `TypstDocument.supportsPdfExport` is
-    `false`. `typst_pdf` -> `krilla` wraps font subsetting in `rayon::spawn`
-    and blocks on the result; the browser build cannot run rayon workers, so
-    the call blocked forever with no error (reported against an app whose page
-    used EB Garamond; documents small enough to finish inside `rayon::yield_now`
-    appeared to work). Re-enabling it needs an upstream `krilla` fix that runs
-    that work inline on wasm.
+  - PDF export works on web. `typst_pdf` -> `krilla` hands its work to
+    `rayon::spawn` and blocks on the result, and a browser cannot spawn rayon
+    workers - rayon's wasm fallback pool is a single worker owned by whichever
+    thread first touched rayon, so an export issued from any other thread blocked
+    for ever with no error (reported against an app whose page used EB Garamond;
+    documents small enough for `rayon::yield_now` to complete inline appeared to
+    work). The conversion now runs inside a pool the calling thread owns, so the
+    deferred work has a thread to run on: the export is synchronous and
+    single-threaded on web. `TypstDocument.supportsPdfExport` is `true`
+    everywhere.
   - Other web limitations: 1 GiB wasm memory ceiling, Typst layout runs
     single-threaded inside one worker, and the bundle is 22.7 MB raw
     (7.3 MB brotli).
