@@ -62,3 +62,7 @@ fmt-rust-check:
 # Rust dependency audit
 audit-rust:
     cd rust {{ and }} cargo audit
+# Build the WebAssembly bundle into example/web/pkg
+# (wasm-pack resolves -o relative to the rust crate directory)
+build-web:
+    flutter_rust_bridge_codegen build-web --release -o ../example/web

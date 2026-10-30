@@ -58,3 +58,7 @@ example/build/
 example/.dart_tool/
 example/.flutter-plugins
 example/.flutter-plugins-dependencies
+
+# WebAssembly bundle produced by `just build-web` (released as a GitHub artifact)
+example/web/pkg/
+.superpowers/
