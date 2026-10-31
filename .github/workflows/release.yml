@@ -302,7 +302,14 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
   # ── pub.dev publish ───────────────────────────────────────────────────────
+  #
+  # Upstream only. A tag on a fork must still build and publish its release
+  # assets - `setup` downloads them from there - but publishing to pub.dev from
+  # a fork would either fail on the missing PUB_CREDENTIALS secret or, worse,
+  # publish a fork under the package's own name. Everything this job needs is
+  # upstream's, so it is the one job a fork skips.
   publish-dart:
+    if: github.repository == 'ajmalbuv/typst_flutter'
     needs: [generate-checksums]
     runs-on: ubuntu-latest
     timeout-minutes: 15
