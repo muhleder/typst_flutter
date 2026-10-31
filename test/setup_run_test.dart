@@ -113,6 +113,131 @@ void main() {
       expect(Directory(p.join(appDir, 'web')).existsSync(), isFalse);
     });
 
+    group('local mode', () {
+      test(
+        '--from installs release-shaped artifacts without any download',
+        () async {
+          final dist = Directory(p.join(root.path, 'dist'))..createSync();
+          for (final name in const [
+            'libtypst_flutter_macos.a',
+            'libtypst_flutter_linux_x64.so',
+            'typst_flutter_windows_x64.dll',
+          ]) {
+            File(p.join(dist.path, name)).writeAsBytesSync([1, 2, 3]);
+          }
+
+          await SetupRunner(
+            SetupOptions.parse([
+              '--from',
+              dist.path,
+              '--version',
+              '9.9.9',
+              '--all-platforms',
+            ]),
+            httpGet: fakeGet,
+            packageRoot: packageDir,
+            workingDirectory: appDir,
+          ).run();
+
+          expect(
+            requested,
+            isEmpty,
+            reason: 'local mode must not touch the network',
+          );
+          expect(
+            File(
+              p.join(
+                packageDir,
+                '.typst_flutter_prebuilt',
+                'macos',
+                'libtypst_flutter.a',
+              ),
+            ).existsSync(),
+            isTrue,
+          );
+          expect(
+            File(
+              p.join(
+                packageDir,
+                '.typst_flutter_prebuilt',
+                'android',
+                'arm64-v8a',
+                'libtypst_flutter.so',
+              ),
+            ).existsSync(),
+            isFalse,
+            reason: 'nothing was built for Android in this fixture',
+          );
+        },
+      );
+
+      test(
+        '--local reads cargo build outputs and the example web bundle',
+        () async {
+          // A fake checkout: rust/target/release + example/web/pkg
+          final hostLib = switch (Platform.operatingSystem) {
+            'macos' => 'libtypst_flutter.a',
+            'windows' => 'typst_flutter.dll',
+            _ => 'libtypst_flutter.so',
+          };
+          Directory(
+            p.join(packageDir, 'rust', 'target', 'release'),
+          ).createSync(recursive: true);
+          File(
+            p.join(packageDir, 'rust', 'target', 'release', hostLib),
+          ).writeAsBytesSync([9, 9, 9]);
+          final pkgDir = Directory(p.join(packageDir, 'example', 'web', 'pkg'))
+            ..createSync(recursive: true);
+          File(
+            p.join(pkgDir.path, 'typst_flutter.js'),
+          ).writeAsStringSync('// js');
+          File(
+            p.join(pkgDir.path, 'typst_flutter_bg.wasm'),
+          ).writeAsBytesSync([0, 97, 115, 109]);
+
+          await SetupRunner(
+            SetupOptions.parse(['--local', '--web', '--version', '9.9.9']),
+            httpGet: fakeGet,
+            packageRoot: packageDir,
+            workingDirectory: appDir,
+          ).run();
+
+          expect(requested, isEmpty);
+          expect(
+            File(
+              p.join(appDir, 'web', 'pkg', 'typst_flutter_bg.wasm'),
+            ).existsSync(),
+            isTrue,
+            reason: 'the locally built wasm must reach the app',
+          );
+          expect(
+            File(
+              p.join(packageDir, '.typst_flutter_prebuilt', '.version'),
+            ).readAsStringSync(),
+            '9.9.9',
+          );
+        },
+      );
+
+      test('--local without build outputs fails with instructions', () async {
+        await expectLater(
+          SetupRunner(
+            SetupOptions.parse(['--local', '--version', '9.9.9']),
+            httpGet: fakeGet,
+            packageRoot: packageDir,
+            workingDirectory: appDir,
+          ).run(),
+          throwsA(
+            isA<Exception>().having(
+              (e) => e.toString(),
+              'message',
+              allOf(contains('just build-host'), contains('--from')),
+            ),
+          ),
+        );
+      });
+    });
+
     test('a fork downloads from its own repository', () async {
       // The reported bug: setup pointed at the upstream owner, so a fork's
       // release assets 404ed.

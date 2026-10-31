@@ -20,8 +20,16 @@ This downloads `typst_flutter_web.tar.gz` from the matching GitHub release,
 verifies it against `SHA256SUMS`, and unpacks `pkg/typst_flutter.js` and
 `pkg/typst_flutter_bg.wasm` into `web/pkg`.
 
-> Working inside this repository instead? `just build-web` builds the bundle
-> into `example/web/pkg` from source.
+> Working inside this repository, or on a fork, instead? `just build-web` builds
+> the bundle into `example/web/pkg` from source and
+
+```
+dart run typst_flutter:setup --local --web
+```
+
+> installs it into your app's `web/pkg` without touching the network. `--from
+> <dir>` does the same from any directory containing `pkg/` or a
+> `typst_flutter_web.tar.gz`.
 
 ## Required response headers
 

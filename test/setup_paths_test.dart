@@ -71,6 +71,61 @@ void main() {
     expect(options.repo?.name, 'my-fork');
   });
 
+  group('local artifact mode', () {
+    test('--local means the package build outputs, --from a directory', () {
+      final local = SetupOptions.parse(['--local']);
+      expect(local.isLocal, isTrue);
+      expect(local.from, isNull);
+
+      final from = SetupOptions.parse(['--from', '/tmp/dist']);
+      expect(from.isLocal, isTrue, reason: '--from implies local');
+      expect(from.from, '/tmp/dist');
+    });
+
+    test('--from= form is accepted', () {
+      expect(SetupOptions.parse(['--from=/tmp/dist']).from, '/tmp/dist');
+    });
+
+    test('a download run is not local', () {
+      final options = SetupOptions.parse(['--web']);
+      expect(options.isLocal, isFalse);
+      expect(options.from, isNull);
+    });
+
+    test('host build output maps to its release artifact name', () {
+      const map = {
+        'libtypst_flutter.a': 'libtypst_flutter_macos.a',
+        'libtypst_flutter.so': 'libtypst_flutter_linux_x64.so',
+        'typst_flutter.dll': 'typst_flutter_windows_x64.dll',
+      };
+
+      for (final entry in map.entries) {
+        expect(SetupOptions.releaseNameForBuildOutput(entry.key), entry.value);
+      }
+      expect(
+        SetupOptions.releaseNameForBuildOutput('libtypst_flutter.dylib'),
+        isNull,
+      );
+    });
+
+    test('android build outputs map to their ABI directory', () {
+      expect(
+        SetupOptions.androidAbiForTarget('aarch64-linux-android'),
+        'arm64-v8a',
+      );
+      expect(
+        SetupOptions.androidAbiForTarget('armv7-linux-androideabi'),
+        'armeabi-v7a',
+      );
+      expect(
+        SetupOptions.androidAbiForTarget('x86_64-linux-android'),
+        'x86_64',
+      );
+      expect(SetupOptions.androidAbiForTarget('i686-linux-android'), 'x86');
+      expect(SetupOptions.androidAbiForTarget('aarch64-apple-ios'), isNull);
+    });
+  });
+
   test('web artifacts land in <cwd>/web/pkg, not in the package root', () {
     final options = SetupOptions.parse(['--web']);
 

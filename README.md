@@ -55,6 +55,28 @@ dart run typst_flutter:setup
 
 > **Tip:** The native build systems (Gradle, CocoaPods, CMake) will try to run `dart run typst_flutter:setup` automatically at build time if binaries are missing. This is best-effort — if it fails for any reason, just run it manually from your app root and rebuild.
 
+### Working on a fork or a local checkout
+
+`setup` installs from GitHub Releases by default. To use libraries you built
+yourself instead — no release, no network:
+
+```bash
+dart run typst_flutter:setup --local          # the checkout's own build output
+dart run typst_flutter:setup --from ./dist    # a directory of artifacts
+```
+
+`--local` reads `rust/target/release` (host), `rust/target/<triple>/release`
+(Android ABIs) and `example/web/pkg` (web) from the package checkout, so
+`just build-host` / `just build-android` / `just build-web` are enough. Add
+`--web` to install the wasm bundle into your app, or pass `--from <dir>` with
+release-shaped files (`libtypst_flutter_macos.a`, `typst_flutter_web.tar.gz`,
+…). Nothing is downloaded and no checksum applies: what you built is what gets
+installed.
+
+When the package is a fork, `setup` also takes release assets from the
+repository named in the package's `pubspec.yaml` `repository:` field, so point
+that at your fork (or pass `--repo owner/name`).
+
 ### Web
 
 Building for the browser needs one extra step, which fetches the WebAssembly

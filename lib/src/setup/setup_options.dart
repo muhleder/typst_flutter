@@ -59,6 +59,8 @@ class SetupOptions {
     this.allPlatforms = false,
     this.includeWeb = false,
     this.repo,
+    this.local = false,
+    this.from,
   });
 
   /// Parses the command line, ignoring unknown arguments.
@@ -68,6 +70,8 @@ class SetupOptions {
     var force = false;
     var allPlatforms = false;
     var includeWeb = false;
+    var local = false;
+    String? from;
     RepositorySlug? repo;
 
     for (var i = 0; i < args.length; i++) {
@@ -80,6 +84,14 @@ class SetupOptions {
         allPlatforms = true;
       } else if (arg == '--web') {
         includeWeb = true;
+      } else if (arg == '--local') {
+        local = true;
+      } else if (arg == '--from' && i + 1 < args.length) {
+        from = args[++i];
+        local = true;
+      } else if (arg.startsWith('--from=')) {
+        from = arg.substring('--from='.length);
+        local = true;
       } else if (arg == '--repo' && i + 1 < args.length) {
         repo = RepositorySlug.parse(args[++i]);
       } else if (arg.startsWith('--repo=')) {
@@ -98,6 +110,8 @@ class SetupOptions {
       allPlatforms: allPlatforms,
       includeWeb: includeWeb,
       repo: repo,
+      local: local,
+      from: from,
     );
   }
 
@@ -116,6 +130,41 @@ class SetupOptions {
   /// Downloads the WebAssembly bundle as well. Never implied: a native-only
   /// app should not receive web files it did not ask for.
   final bool includeWeb;
+
+  /// Install from locally built artifacts instead of downloading a release.
+  ///
+  /// True when `--local` or `--from` was given. Nothing is downloaded and no
+  /// checksum is verified; whatever the local build produced is what gets
+  /// installed.
+  final bool local;
+
+  /// Directory to take local artifacts from.
+  ///
+  /// Null with [local] means "the package checkout's own build outputs"
+  /// (`rust/target/**/release` and `example/web/pkg`).
+  final String? from;
+
+  /// Whether artifacts come from this machine rather than from a release.
+  bool get isLocal => local;
+
+  /// Maps a host library produced by `cargo build --release` to the release
+  /// asset name it stands in for. Returns null for anything else.
+  static String? releaseNameForBuildOutput(String fileName) =>
+      switch (fileName) {
+        'libtypst_flutter.a' => 'libtypst_flutter_macos.a',
+        'libtypst_flutter.so' => 'libtypst_flutter_linux_x64.so',
+        'typst_flutter.dll' => 'typst_flutter_windows_x64.dll',
+        _ => null,
+      };
+
+  /// Maps a cargo target triple to the Android ABI directory it belongs in.
+  static String? androidAbiForTarget(String target) => switch (target) {
+    'aarch64-linux-android' => 'arm64-v8a',
+    'armv7-linux-androideabi' => 'armeabi-v7a',
+    'x86_64-linux-android' => 'x86_64',
+    'i686-linux-android' => 'x86',
+    _ => null,
+  };
 
   /// Repository to download release assets from.
   ///

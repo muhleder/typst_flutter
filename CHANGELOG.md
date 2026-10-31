@@ -19,6 +19,15 @@
   - `dart run typst_flutter:setup --web` downloads the wasm bundle into the
     app's `web/pkg` (verified against `SHA256SUMS`); it is opt-in, so native-only
     apps never receive web files.
+  - New `--local` and `--from <dir>` modes install artifacts built on your own
+    machine instead of a release — `rust/target/**/release` and
+    `example/web/pkg` for `--local`, any release-shaped directory for `--from`.
+    Nothing is downloaded and no checksum applies. This is what a fork needs
+    before it has published a release.
+  - `setup` now resolves its release repository from the package's
+    `pubspec.yaml` `repository:` URL (overridable with `--repo owner/name` or
+    `TYPST_FLUTTER_REPO`), so a fork stops asking the upstream repository for
+    releases it never published.
   - The web build requires cross-origin isolation:
     `Cross-Origin-Opener-Policy: same-origin` and
     `Cross-Origin-Embedder-Policy: require-corp`.

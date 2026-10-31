@@ -52,6 +52,13 @@ Options:
                     unpack it into <current dir>/web/pkg. The app must then be
                     served with Cross-Origin-Opener-Policy: same-origin and
                     Cross-Origin-Embedder-Policy: require-corp.
+  --local           Install libraries that were built on this machine instead
+                    of downloading a release. Looks in the package checkout's
+                    rust/target/release, rust/target/<triple>/release and
+                    example/web/pkg. Nothing is downloaded or verified.
+  --from <dir>      Like --local, but take the artifacts from <dir> (a folder
+                    of release-shaped assets, or a folder containing pkg/ or
+                    typst_flutter_web.tar.gz).
   --repo <owner/name>
                     Repository to download release assets from. Defaults to
                     the package's pubspec `repository:` URL, so a fork uses
@@ -225,6 +232,11 @@ class SetupRunner {
     print('  Verify SHA   : ${!_opts.noVerify}');
     print('');
 
+    if (_opts.isLocal) {
+      await _installLocal();
+      return;
+    }
+
     // Check if the native libraries are already up-to-date. The web bundle is
     // tracked separately (it lives in the app, not the package), so --web must
     // still run when the native stamp matches.
@@ -291,6 +303,175 @@ class SetupRunner {
     final stampFile = File(stampPath);
     if (!stampFile.existsSync()) return false;
     return stampFile.readAsStringSync().trim() == _version;
+  }
+
+  /// Installs artifacts that were built on this machine instead of downloading
+  /// a release.
+  ///
+  /// Sources, in order: an explicit `--from <dir>`, then the package
+  /// checkout's own outputs (`rust/target/**/release`, `example/web/pkg`).
+  /// Nothing is downloaded and no checksum is verified.
+  Future<void> _installLocal() async {
+    final root = _opts.from ?? _packageRoot;
+    print('');
+    print('── Local artifacts ────────────────────────────────────────');
+    print('  Source       : $root');
+
+    if (!Directory(root).existsSync()) {
+      throw Exception('--from directory does not exist: $root');
+    }
+
+    final wanted = _opts.allPlatforms
+        ? _allArtifacts()
+        : _artifactsForPlatform(Platform.operatingSystem);
+
+    var installed = 0;
+    final missing = <String>[];
+
+    for (final artifact in wanted) {
+      final bytes = _readLocalArtifact(artifact, root);
+      if (bytes == null) {
+        missing.add(artifact.filename);
+        continue;
+      }
+      _writeArtifact(artifact, bytes);
+      installed++;
+    }
+
+    if (installed == 0) {
+      throw Exception(
+        'No local artifacts found in $root.\n'
+        'Looked for: ${wanted.map((a) => a.filename).join(', ')},\n'
+        'and for cargo outputs in rust/target/release/ and '
+        'rust/target/<triple>/release/.\n'
+        'Build them first with: just build-host (host), just build-android '
+        '(Android), or pass --from <dir> pointing at a directory of release '
+        'assets.',
+      );
+    }
+
+    if (missing.isNotEmpty) {
+      print('  ⚠  Not found locally: ${missing.join(', ')}');
+    }
+
+    Directory(p.join(_packageRoot, _prebuiltDir)).createSync(recursive: true);
+    File(p.join(_packageRoot, _versionFile)).writeAsStringSync(_version);
+    print('');
+    print('✓ Installed $installed local artifact(s) for v$_version.');
+
+    if (_opts.includeWeb) {
+      await _installLocalWeb(root);
+    }
+  }
+
+  /// Finds the bytes for [artifact] in [root], checking release-asset names
+  /// first and cargo build outputs second.
+  List<int>? _readLocalArtifact(_Artifact artifact, String root) {
+    final direct = File(p.join(root, artifact.filename));
+    if (direct.existsSync()) return direct.readAsBytesSync();
+
+    // Host build output: rust/target/release/libtypst_flutter.<ext>
+    final releaseDir = p.join(root, 'rust', 'target', 'release');
+    for (final name in [
+      'libtypst_flutter.a',
+      'libtypst_flutter.so',
+      'typst_flutter.dll',
+    ]) {
+      if (SetupOptions.releaseNameForBuildOutput(name) != artifact.filename) {
+        continue;
+      }
+      final file = File(p.join(releaseDir, name));
+      if (file.existsSync()) return file.readAsBytesSync();
+    }
+
+    // Android build outputs: rust/target/<triple>/release/libtypst_flutter.so
+    for (final triple in const [
+      'aarch64-linux-android',
+      'armv7-linux-androideabi',
+      'x86_64-linux-android',
+      'i686-linux-android',
+    ]) {
+      final abi = SetupOptions.androidAbiForTarget(triple);
+      if (abi == null ||
+          artifact.destination != 'android/$abi/libtypst_flutter.so') {
+        continue;
+      }
+      final file = File(
+        p.join(
+          root,
+          'rust',
+          'target',
+          triple,
+          'release',
+          'libtypst_flutter.so',
+        ),
+      );
+      if (file.existsSync()) return file.readAsBytesSync();
+    }
+
+    return null;
+  }
+
+  /// Installs the wasm bundle from a local build: `pkg/` or a
+  /// `typst_flutter_web.tar.gz` in [root], else the checkout's example build.
+  Future<void> _installLocalWeb(String root) async {
+    final cwd = _workingDirectory ?? Directory.current.path;
+    final destination = _opts.webDestinationFor(cwd);
+
+    final candidates = <String>[
+      p.join(root, 'pkg'),
+      p.join(root, 'example', 'web', 'pkg'),
+    ];
+
+    for (final candidate in candidates) {
+      if (!Directory(candidate).existsSync()) continue;
+      final files = Directory(candidate)
+          .listSync(recursive: true)
+          .whereType<File>()
+          .where((f) => !p.basename(f.path).startsWith('.'))
+          .toList();
+      if (files.isEmpty) continue;
+
+      for (final file in files) {
+        final relative = p.relative(file.path, from: candidate);
+        final target = File(p.join(destination, relative));
+        target.parent.createSync(recursive: true);
+        target.writeAsBytesSync(file.readAsBytesSync());
+      }
+      File(_opts.webVersionStampFor(cwd)).writeAsStringSync(_version);
+      print('  ✓ web bundle from $candidate → $destination');
+      _printWebInstructions();
+      return;
+    }
+
+    final tarball = File(p.join(root, 'typst_flutter_web.tar.gz'));
+    if (tarball.existsSync()) {
+      final archive = TarDecoder().decodeBytes(
+        const GZipDecoder().decodeBytes(tarball.readAsBytesSync()),
+      );
+      var extracted = 0;
+      for (final entry in archive.files) {
+        if (!entry.isFile) continue;
+        final relative = _opts.webEntryPath(entry.name);
+        if (relative == null) continue;
+        final target = File(
+          p.join(destination, p.joinAll(relative.split('/'))),
+        );
+        target.parent.createSync(recursive: true);
+        target.writeAsBytesSync(entry.content as List<int>);
+        extracted++;
+      }
+      File(_opts.webVersionStampFor(cwd)).writeAsStringSync(_version);
+      print('  ✓ web bundle from ${tarball.path} ($extracted files)');
+      _printWebInstructions();
+      return;
+    }
+
+    throw Exception(
+      'No local web bundle found. Looked for ${candidates.join(', ')} '
+      'and ${p.join(root, 'typst_flutter_web.tar.gz')}. '
+      'Build one with: just build-web',
+    );
   }
 
   /// Downloads `typst_flutter_web.tar.gz` and unpacks it into the current
@@ -388,17 +569,7 @@ class SetupRunner {
   Future<void> _downloadArtifact(_Artifact artifact) async {
     final url =
         'https://github.com/$_repo/releases/download/v$_version/${artifact.filename}';
-    final destPath = p.join(
-      _packageRoot,
-      _prebuiltDir,
-      p.joinAll(artifact.destination.split('/')),
-    );
-
     print('⟳ ${artifact.filename}');
-
-    // Ensure destination directory exists
-    final destDir = Directory(p.dirname(destPath));
-    if (!destDir.existsSync()) destDir.createSync(recursive: true);
 
     // Download to memory
     final response = await _httpGet(Uri.parse(url));
@@ -435,10 +606,22 @@ class SetupRunner {
       }
     }
 
-    // Write/extract file
+    _writeArtifact(artifact, bytes);
+  }
+
+  /// Writes an artifact's bytes to where the Flutter build system expects it,
+  /// unpacking it first when the artifact is a zip.
+  void _writeArtifact(_Artifact artifact, List<int> bytes) {
+    final destPath = p.join(
+      _packageRoot,
+      _prebuiltDir,
+      p.joinAll(artifact.destination.split('/')),
+    );
+    Directory(p.dirname(destPath)).createSync(recursive: true);
+
     if (artifact.filename.endsWith('.zip')) {
       final archive = ZipDecoder().decodeBytes(bytes);
-      await extractArchiveToDisk(archive, destPath);
+      extractArchiveToDiskSync(archive, destPath);
     } else {
       File(destPath).writeAsBytesSync(bytes);
     }
