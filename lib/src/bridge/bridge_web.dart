@@ -34,18 +34,32 @@ Future<void> initWithOptionalWebModule({String? webModuleRoot}) async {
   await RustLib.init();
 }
 
-/// Throws a [TypstWebSetupException] unless [url] returns a successful
-/// response. A server that rejects `HEAD` is given the benefit of the doubt:
-/// only a definite client/server error fails here.
+/// Throws a [TypstWebSetupException] unless [url] can be served.
 ///
-/// `HEAD` matters: the wasm is ~23 MB, and a `GET` here would download it once
-/// for this check and once more for flutter_rust_bridge's own loader.
+/// The check asks with a ranged `GET` rather than a `HEAD`, because a server
+/// that does not implement `HEAD` answers it with a `404` for a file it is
+/// serving: `flutter run`'s dev server does exactly that, for
+/// `pkg/typst_flutter.js` and `index.html` alike, and a `HEAD` here reported a
+/// bundle that was there as missing - the one failure a developer is guaranteed
+/// to hit, since it is the first thing a web build does.
+///
+/// The range keeps the check from downloading the bundle: the wasm is ~23 MB
+/// and flutter_rust_bridge fetches it itself a moment later. The body is
+/// cancelled as soon as the status is in hand, so a host that ignores `Range`
+/// costs one aborted response rather than a second copy of the file.
+///
+/// A host that refuses the range is not an error either: `416` (range not
+/// satisfiable) and `405`/`501` (not implemented) both mean the URL was answered.
 Future<void> _ensureReachable(String url, String fix) async {
+  final range = web.Headers()..set('Range', 'bytes=0-0');
   final response = await web.window
-      .fetch(url.toJS, web.RequestInit(method: 'HEAD'))
+      .fetch(url.toJS, web.RequestInit(method: 'GET', headers: range))
       .toDart;
-  if (response.ok) return;
+  final body = response.body;
+  if (body != null) await body.cancel().toDart;
+
   final status = response.status;
-  if (status == 405 || status == 501) return;
+  if (status >= 200 && status < 300) return;
+  if (status == 405 || status == 416 || status == 501) return;
   throw TypstWebSetupException('Could not load $url (HTTP $status). $fix');
 }
