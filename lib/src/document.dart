@@ -2,6 +2,7 @@ import 'dart:typed_data';
 import 'dart:ui' as ui;
 
 import 'package:meta/meta.dart';
+import 'package:typst_flutter/src/call_queue.dart';
 import 'package:typst_flutter/src/exceptions.dart';
 import 'package:typst_flutter/src/rust/api/typst.dart' as api;
 
@@ -97,7 +98,7 @@ class TypstDocument {
   Future<Uint8List> exportPdf() async {
     _checkNotDisposed();
     try {
-      return await _inner.exportPdf();
+      return await rustCalls.run(_inner.exportPdf);
     } catch (e) {
       throw TypstRenderException(e.toString());
     }
@@ -111,7 +112,9 @@ class TypstDocument {
     _checkNotDisposed();
     RangeError.checkValidIndex(pageIndex, null, 'pageIndex', pageCount);
     try {
-      return await _inner.exportSvg(index: BigInt.from(pageIndex));
+      return await rustCalls.run(
+        () => _inner.exportSvg(index: BigInt.from(pageIndex)),
+      );
     } catch (e) {
       throw TypstRenderException(e.toString());
     }
@@ -128,9 +131,11 @@ class TypstDocument {
     _checkNotDisposed();
     RangeError.checkValidIndex(pageIndex, null, 'pageIndex', pageCount);
     try {
-      final result = await _inner.renderPage(
-        index: BigInt.from(pageIndex),
-        pixelPerPt: pixelsPerPt,
+      final result = await rustCalls.run(
+        () => _inner.renderPage(
+          index: BigInt.from(pageIndex),
+          pixelPerPt: pixelsPerPt,
+        ),
       );
       return TypstRenderResult(
         index: pageIndex,

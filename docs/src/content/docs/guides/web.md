@@ -140,9 +140,24 @@ headers in front of it.
   the prefix you serve the bundle from. By default it is `pkg/`, resolved
   relative to the page, so a sub-path deployment works without changes.
 
-## Known limitation: one call at a time per handle
+## One call at a time
 
-`#[frb(sync)]` calls on the web run on the browser's event loop and fail
-immediately if an asynchronous call still holds the same object. In practice
-that means: always `await` a call before starting the next one on the same
-compiler or document. The bundled widgets already do this.
+Every asynchronous call this package makes into Rust goes through a single
+queue - `compile`, `addFonts`, `query`, `renderRaster`, `renderSvg` and
+`exportPdf`, across every compiler and every document. You never see it, but it
+is why a preview can compile a chapter while a page is still being rendered:
+concurrent calls do not wait for each other in a browser, they fail.
+
+The reason is in the wasm build rather than in this package. Typst's
+memoization cache (`comemo`) is process-wide and behind `parking_lot` locks,
+and `parking_lot`'s wasm parker panics with `Parking not supported on this
+platform` instead of blocking. Two calls that overlap therefore take the wasm
+instance down with an `unreachable` trap, and the call that traps fails
+quietly - a page that stops updating, with nothing in the console to say why.
+The queue costs a pass in a straight line and removes the failure entirely.
+
+What it does not cover is `#[frb(sync)]` calls - `pageCount`, `pageInfo`,
+`warnings`, `dispose` - which run on the browser's event loop and fail
+immediately if an asynchronous call is holding the same object. Reading a
+document's page count while it is being rendered is still the caller's to
+sequence, which is why the bundled widgets `await` before they read.

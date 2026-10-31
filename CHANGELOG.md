@@ -31,6 +31,14 @@
   - The web build requires cross-origin isolation:
     `Cross-Origin-Opener-Policy: same-origin` and
     `Cross-Origin-Embedder-Policy: require-corp`.
+  - Every asynchronous call into Rust now goes through one queue - `compile`,
+    `addFonts`, `query`, `renderRaster`, `renderSvg`, `exportPdf`, across every
+    compiler and document. Without it, two overlapping calls in a browser did
+    not wait for each other: `parking_lot`'s wasm parker panics rather than
+    blocking and typst's memo cache is process-wide, so a compile issued while a
+    page was being rendered trapped the wasm instance and lost the call. This is
+    the ordinary case for a preview - typing while a page renders - and it failed
+    silently.
   - PDF export works on web. `typst_pdf` -> `krilla` hands its work to
     `rayon::spawn` and blocks on the result, and a browser cannot spawn rayon
     workers - rayon's wasm fallback pool is a single worker owned by whichever

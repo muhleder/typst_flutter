@@ -2,6 +2,7 @@ import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 import 'package:http/http.dart' as http;
 import 'package:typst_flutter/src/bridge/bridge.dart';
+import 'package:typst_flutter/src/call_queue.dart';
 import 'package:typst_flutter/src/config.dart';
 import 'package:typst_flutter/src/document.dart';
 import 'package:typst_flutter/src/exceptions.dart';
@@ -44,20 +45,15 @@ class TypstCompiler {
   final String _packageRegistryUrl;
   final http.Client _httpClient;
 
-  /// Tail of the queue that serialises calls made through this compiler.
+  /// Runs [action] through the queue every call into Rust shares.
   ///
-  /// The engine is stateful (`compile` mutates the world before running) and
-  /// the scans that precede it are `#[frb(sync)]` on web, where such a call
-  /// fails immediately instead of waiting for a lock another call holds. A
-  /// widget can legitimately fire an un-awaited recompile on every keystroke,
-  /// so calls are chained here rather than allowed to overlap.
-  Future<void> _queue = Future<void>.value();
-
-  Future<T> _serialize<T>(Future<T> Function() action) {
-    final result = _queue.then((_) => action());
-    _queue = result.then((_) {}, onError: (Object _) {});
-    return result;
-  }
+  /// It used to be one queue per compiler, for the engine's own state:
+  /// `compile` mutates the world before running, and a widget can legitimately
+  /// fire an un-awaited recompile on every keystroke. The reason is bigger than
+  /// one engine - typst's memo cache is process-wide behind locks a browser
+  /// cannot park on, so a compile here and a page render on another engine must
+  /// not overlap either - and the queue lives in `call_queue.dart` for it.
+  Future<T> _serialize<T>(Future<T> Function() action) => rustCalls.run(action);
 
   /// Releases the native resources associated with this compiler.
   ///
@@ -114,7 +110,7 @@ class TypstCompiler {
     if (fonts != null) {
       final fontBytes = await fonts.load();
       if (fontBytes.isNotEmpty) {
-        await engine.addFonts(fontData: fontBytes);
+        await rustCalls.run(() => engine.addFonts(fontData: fontBytes));
       }
     }
     return TypstCompiler._(
@@ -130,7 +126,7 @@ class TypstCompiler {
   Future<void> addFonts(FontSource fonts) async {
     final fontBytes = await fonts.load();
     if (fontBytes.isNotEmpty) {
-      await _engine.addFonts(fontData: fontBytes);
+      await _serialize(() => _engine.addFonts(fontData: fontBytes));
     }
   }
 
@@ -154,7 +150,12 @@ class TypstCompiler {
     DateTime? date,
     Map<String, String>? inputs,
     bool allowPackages = true,
-  }) => _serialize(() async {
+  }) async {
+    // Reading the files and, on the web, downloading the packages the markup
+    // names happen outside the queue: they are Dart work, and holding the one
+    // slot the whole library shares through a download would stall every other
+    // call behind it. What is queued is the engine call itself, which is what
+    // contends.
     final virtualFiles = await _buildVirtualFiles(files);
     try {
       if (kIsWeb && allowPackages) {
@@ -164,12 +165,14 @@ class TypstCompiler {
           httpClient: _httpClient,
         ).prefetch(markup: source, files: virtualFiles);
       }
-      final inner = await _engine.compile(
-        markup: source,
-        files: virtualFiles,
-        sysTime: _dateTimeToSysTime(date),
-        inputs: inputs,
-        allowPackages: allowPackages,
+      final inner = await _serialize(
+        () => _engine.compile(
+          markup: source,
+          files: virtualFiles,
+          sysTime: _dateTimeToSysTime(date),
+          inputs: inputs,
+          allowPackages: allowPackages,
+        ),
       );
       return TypstDocument.fromInner(inner);
     } on api.TypstCompileError catch (e) {
@@ -183,7 +186,7 @@ class TypstCompiler {
     } catch (e) {
       throw TypstCompileException('$e');
     }
-  });
+  }
 
   /// Returns the version string of the embedded Typst compiler engine.
   String get compilerVersion => api.getTypstVersion();
