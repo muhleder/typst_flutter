@@ -117,11 +117,21 @@ pub struct TypstCompileError {
 /// while `spawn`-then-block does not, so a small document sometimes finished and a
 /// real one never did.
 ///
-/// So on wasm the conversion runs inside a pool **this thread owns**: it becomes
-/// that pool's worker for the duration of the call, its `yield_now` finds the
-/// spawned chunks on its own queue, and the export is synchronous and
-/// single-threaded - which is all a browser has to give it. Native platforms keep
-/// the real global pool and just call through.
+/// So on wasm the conversion runs on a thread that is a pool worker, one way or
+/// the other:
+///
+/// - **Already a worker**: typst's own layout runs `par_iter`, and on wasm that
+///   made this very thread the global fallback pool's worker. Its `yield_now`
+///   drains the chunks the writer spawns, so the writer is called straight
+///   through. This is the ordinary case for an export, which compiles the book
+///   before it writes it - and it is why building a pool *here* failed with
+///   `CurrentThreadAlreadyInPool` on the second export of a session.
+/// - **Not a worker yet**: a pool of our own, with this thread as its worker
+///   (`use_current_thread`). Its `yield_now` finds the chunks on its own queue.
+///
+/// Either way the export is synchronous and single-threaded, which is all a
+/// browser has to give it. Native platforms keep the real global pool and just
+/// call through.
 fn on_pdf_thread<T, F>(f: F) -> Result<T, String>
 where
     F: FnOnce() -> Result<T, String> + Send,
@@ -129,6 +139,9 @@ where
 {
     #[cfg(target_family = "wasm")]
     {
+        if ::rayon::current_thread_index().is_some() {
+            return f();
+        }
         let pool = ::rayon::ThreadPoolBuilder::new()
             .num_threads(1)
             .use_current_thread()
@@ -407,6 +420,18 @@ mod pdf_thread_tests {
     #[test]
     fn the_pdf_writer_returns_what_it_was_asked_for() {
         assert_eq!(on_pdf_thread(|| Ok(42)).unwrap(), 42);
+    }
+
+    #[test]
+    fn the_pdf_writer_runs_from_inside_a_rayon_worker_too() {
+        // The wasm shape of an export: typst's own layout has already made the
+        // thread a worker, so no pool of ours is built there.
+        let on_worker = rayon::ThreadPoolBuilder::new()
+            .num_threads(1)
+            .build()
+            .unwrap()
+            .install(|| on_pdf_thread(|| Ok(42)).unwrap());
+        assert_eq!(on_worker, 42);
     }
 
     #[test]
