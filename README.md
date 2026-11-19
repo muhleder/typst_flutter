@@ -38,7 +38,7 @@ Add the package to your `pubspec.yaml`:
 
 ```yaml
 dependencies:
-  typst_flutter: 3.1.0-beta.1
+  typst_flutter: 3.1.0-beta.3
 ```
 
 Then fetch dependencies and run the **required** one-time setup:
