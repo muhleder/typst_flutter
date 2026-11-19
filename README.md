@@ -55,6 +55,11 @@ dart run typst_flutter:setup
 
 > **Tip:** The native build systems (Gradle, CocoaPods, CMake) will try to run `dart run typst_flutter:setup` automatically at build time if binaries are missing. This is best-effort — if it fails for any reason, just run it manually from your app root and rebuild.
 
+> **Android:** the libraries are linked for 16 KB memory pages, which Android 15
+> and later can use and Play requires of every 64-bit native library. There is
+> nothing to configure in the app; a fork that builds its own libraries gets the
+> same linker flags from `rust/build.rs`.
+
 ### Working on a fork or a local checkout
 
 `setup` installs from GitHub Releases by default. To use libraries you built

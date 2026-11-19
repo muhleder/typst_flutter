@@ -56,6 +56,31 @@ jobs:
           cp rust/target/i686-linux-android/release/libtypst_flutter.so \
              artifacts/libtypst_flutter_android_x86.so
 
+      - name: Verify 16 KB page alignment
+        run: |
+          # rust/build.rs asks the linker for 16 KB pages. Play refuses any
+          # library whose PT_LOAD segments are not aligned that way ("Libraries
+          # that do not support 16 KB"), and the linker default is 4 KB - so this
+          # is what proves the flags reached the libraries now being published,
+          # rather than a release going out that Play will reject.
+          status=0
+          for library in artifacts/*.so; do
+            aligns=$(readelf -lW "$library" | awk '$1 == "LOAD" { print $NF }' | sort -u)
+            if [ -z "$aligns" ]; then
+              echo "::error file=$library::no PT_LOAD segments found"
+              status=1
+              continue
+            fi
+            for align in $aligns; do
+              if [ "$((align))" -lt 16384 ]; then
+                echo "::error file=$library::PT_LOAD alignment $align is below 16 KB"
+                status=1
+              fi
+            done
+            echo "$library: PT_LOAD alignment $(echo "$aligns" | tr '\n' ' ')"
+          done
+          exit $status
+
       - uses: actions/upload-artifact@v7
         with:
           name: android-libs

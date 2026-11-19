@@ -206,6 +206,33 @@ After all jobs complete:
 2. `SHA256SUMS` file is generated and attached
 3. Package is published to pub.dev via OIDC (no stored secrets)
 
+### Android and 16 KB memory pages
+
+Android 15 and later can run devices with a 16 KB page size, and Play refuses any app whose 64-bit
+native libraries cannot load there, naming each offending `.so` under "Libraries that do not
+support 16 KB". The loader maps every `PT_LOAD` segment at the page size, so the library has to be
+linked for it — and the NDK's default is 4 KB.
+
+`rust/build.rs` therefore passes
+
+```
+-Wl,-z,max-page-size=16384 -Wl,-z,common-page-size=16384
+```
+
+to the linker for every Android target, which is what NDK r28 and later do by default. The flags live
+in the build script rather than in a `.cargo/config.toml` so they apply however the crate is built —
+`cross` in the release workflow, `cargo ndk` in `just build-android`, Cargokit, or a plain
+`cargo build` — with no dependency on the linker invocation that happens to be used. The release
+workflow's `build-android` job then checks each packaged library and fails if any `PT_LOAD` is
+aligned below 16 KB, because Play checking it after publication is too late.
+
+To inspect a local build:
+
+```bash
+readelf -lW rust/target/aarch64-linux-android/release/libtypst_flutter.so | grep LOAD
+# every line must end in 0x4000 (16 KB); 0x1000 means the flags did not reach the linker
+```
+
 ---
 
 ## Current state (as of v3.0.0)

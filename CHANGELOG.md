@@ -1,3 +1,17 @@
+## Unreleased
+
+### Fixes
+
+- **Android libraries are linked for 16 KB memory pages.** Play rejected the
+  previous release's `.so` files on Android 15+ devices with "Libraries that do
+  not support 16 KB": the NDK links with 4 KB segment alignment by default,
+  which a 16 KB-page device cannot map. `rust/build.rs` now passes
+  `-Wl,-z,max-page-size=16384 -Wl,-z,common-page-size=16384` for every Android
+  target, so `PT_LOAD` segments are aligned at 16 KB in all four ABIs, whichever
+  way the crate is built (`cross`, `cargo ndk`, Cargokit, plain `cargo build`).
+  The release workflow checks the packaged libraries and fails the job if any
+  `PT_LOAD` is aligned below 16 KB.
+
 ## 3.1.0-beta.1
 
 ### New Features
