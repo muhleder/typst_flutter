@@ -1,4 +1,4 @@
-## Unreleased
+## 3.1.0-beta.4
 
 ### Fixes
 
@@ -14,7 +14,6 @@
   Those three calls are now queued like the rest; the downloads between them
   stay outside it, because holding the one slot the library shares through a
   network round trip would stall every compile behind it.
-
 
 ## 3.1.0-beta.3
 
