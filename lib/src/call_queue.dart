@@ -19,11 +19,20 @@ import 'dart:collection';
 ///
 /// So everything asynchronous goes through here instead: `compile`, `addFonts`,
 /// `query`, `renderRaster`, `renderSvg` and `exportPdf`, across every compiler
-/// and every document, because the cache they contend on is not per engine.
-/// Calls that are `#[frb(sync)]` (`pageCount`, `pageInfo`, `warnings`,
-/// `dispose`) stay out of it: they run on the calling thread, and in a browser
-/// they fail immediately rather than parking, which is a different problem with
-/// a different answer.
+/// and every document, because the cache they contend on is not per engine -
+/// and `addPackageArchives` with them. The package prefetch that runs before a
+/// web compile reads the engine twice (`cachedPackageSpecs`,
+/// `scanPackageSpecs`) and injects what it downloaded once; those three calls
+/// are in the queue too, but the downloads between them are not, because
+/// holding the slot through a network round trip would stall every compile
+/// behind it.
+///
+/// What stays out is what cannot wait for a slot: `#[frb(sync)]` calls
+/// (`pageCount`, `pageInfo`, `warnings`) run on the calling thread and, in a
+/// browser, fail immediately rather than parking. Asking the queue for a slot
+/// from one of those would deadlock, so they stay the reads they are - and they
+/// read objects nothing writes, since `dispose` only releases this side's
+/// handle (see `RustOpaqueInterface.dispose`).
 class RustCallQueue {
   /// The calls waiting for the slot, oldest first.
   ///

@@ -83,4 +83,55 @@ void main() {
     document.dispose();
     compiler.dispose();
   });
+
+  // A preview fires its recompiles un-awaited, so one compile is in flight when
+  // the next one starts - and a compile write-locks its engine for the whole of
+  // its run. The second compile's package prefetch used to read that engine
+  // outside the queue every call into Rust shares, and a `#[frb(sync)]` read in
+  // a browser cannot wait for a lock: it threw
+  // `cannot synchronously read rust opaque objects while it is locked on Web:
+  // TryLockError`, which the author saw as a compile error in place of the
+  // page. Both of these must settle.
+  testWidgets('a compile that overlaps another waits its turn', (tester) async {
+    final compiler = await TypstCompiler.create();
+
+    // Long enough that the first compile is still inside Rust when the second
+    // one asks for its slot. `allowPackages` stays at its default so the second
+    // compile runs the prefetch, which is where the locked engine was read.
+    final long = StringBuffer('= One\n\n');
+    for (var i = 0; i < 400; i++) {
+      long.writeln('#lorem(60)\n');
+    }
+
+    final first = compiler.compile(source: long.toString());
+    await Future<void>.delayed(const Duration(milliseconds: 80));
+    final second = compiler.compile(source: '= Two\n\nSmall.');
+
+    final documents = <TypstDocument>[];
+    final failures = <Object>[];
+    for (final compile in <Future<TypstDocument>>[first, second]) {
+      try {
+        documents.add(await compile);
+      } on Object catch (error) {
+        failures.add(error);
+      }
+    }
+
+    expect(
+      failures,
+      isEmpty,
+      reason:
+          'an overlapping compile must wait for the slot, not read a '
+          'locked engine',
+    );
+    expect(
+      documents.map((document) => document.pageCount),
+      everyElement(greaterThan(0)),
+    );
+
+    for (final document in documents) {
+      document.dispose();
+    }
+    compiler.dispose();
+  });
 }

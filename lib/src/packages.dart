@@ -7,7 +7,10 @@
 /// Rust; this file is not used there.
 library;
 
+import 'dart:async';
+
 import 'package:http/http.dart' as http;
+import 'package:typst_flutter/src/call_queue.dart';
 import 'package:typst_flutter/src/exceptions.dart';
 import 'package:typst_flutter/src/rust/api/typst.dart' as api;
 
@@ -78,14 +81,16 @@ final class PackagePrefetcher {
     required String markup,
     required List<api.VirtualFile> files,
   }) async {
-    final cached = _source.cachedPackageSpecs().toSet();
+    final cached = (await _serialized(_source.cachedPackageSpecs)).toSet();
     final pending = <String>[];
 
     void queue(String spec) {
       if (!cached.contains(spec) && !pending.contains(spec)) pending.add(spec);
     }
 
-    _source.scanPackageSpecs(markup: markup, files: files).forEach(queue);
+    (await _serialized(
+      () => _source.scanPackageSpecs(markup: markup, files: files),
+    )).forEach(queue);
 
     var rounds = 0;
     while (pending.isNotEmpty && rounds < maxRounds) {
@@ -94,11 +99,30 @@ final class PackagePrefetcher {
       pending.clear();
 
       final archives = await Future.wait(batch.map(_download));
-      final unresolved = await _source.addPackageArchives(archives);
+      final unresolved = await _serialized(
+        () => _source.addPackageArchives(archives),
+      );
       cached.addAll(batch);
       unresolved.forEach(queue);
     }
   }
+
+  /// Runs [call] with the one slot every call into Rust shares.
+  ///
+  /// All three [PackageSource] calls are calls into Rust, and two of them -
+  /// `cachedPackageSpecs` and `scanPackageSpecs` - are `#[frb(sync)]`, which on
+  /// the web cannot wait for a lock: an engine that is write-locked answers
+  /// with `cannot synchronously read rust opaque objects while it is locked on
+  /// Web: TryLockError` instead. An engine is write-locked for the whole of a
+  /// compile, and a preview compiles again before the last one is done, so the
+  /// second compile's prefetch used to fail before its compile was even asked
+  /// for - the author saw that as a compile error in place of the page.
+  ///
+  /// Only these three calls are queued: the downloads between them are Dart and
+  /// a network round trip, and holding the one slot the whole library shares
+  /// through one would stall every compile behind it.
+  Future<T> _serialized<T>(FutureOr<T> Function() call) =>
+      rustCalls.run(() async => await call());
 
   Future<api.PackageArchive> _download(String spec) async {
     final url = _urlFor(spec);

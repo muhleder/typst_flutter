@@ -1,8 +1,10 @@
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
+import 'package:typst_flutter/src/call_queue.dart';
 import 'package:typst_flutter/src/exceptions.dart';
 import 'package:typst_flutter/src/packages.dart';
 import 'package:typst_flutter/src/rust/api/typst.dart' as api;
@@ -16,11 +18,15 @@ class _FakeSource implements PackageSource {
   final injected = <String, List<String>>{};
   final scannedFiles = <String>[];
 
+  /// Every method the prefetcher has called, in order.
+  final asked = <String>[];
+
   @override
   List<String> scanPackageSpecs({
     required String markup,
     required List<api.VirtualFile> files,
   }) {
+    asked.add('scanPackageSpecs');
     scannedFiles
       ..clear()
       ..addAll(files.map((f) => f.path));
@@ -28,12 +34,16 @@ class _FakeSource implements PackageSource {
   }
 
   @override
-  List<String> cachedPackageSpecs() => cached.toList();
+  List<String> cachedPackageSpecs() {
+    asked.add('cachedPackageSpecs');
+    return cached.toList();
+  }
 
   @override
   Future<List<String>> addPackageArchives(
     List<api.PackageArchive> archives,
   ) async {
+    asked.add('addPackageArchives');
     final unresolved = <String>[];
     for (final archive in archives) {
       cached.add(archive.spec);
@@ -192,6 +202,69 @@ void main() {
       await prefetcher.prefetch(markup: '= Main', files: const []);
 
       expect(source.cached, {'@preview/a:1.0.0', '@preview/b:1.0.0'});
+    });
+
+    // The engine reads are `#[frb(sync)]`, and a sync call on the web cannot
+    // wait: if the engine is write-locked - which it is for the whole of a
+    // compile - the read throws `cannot synchronously read rust opaque objects
+    // while it is locked on Web: TryLockError` instead of waiting for it. A
+    // preview fires its recompiles un-awaited, so a compile is in flight as a
+    // matter of course when the next compile's prefetch starts.
+    test('the engine is not read until the shared slot is free', () async {
+      final source = _FakeSource(const []);
+      final prefetcher = PackagePrefetcher(
+        source,
+        registryUrl: 'https://packages.typst.org',
+        httpClient: MockClient((request) async => http.Response.bytes([], 200)),
+      );
+
+      // A compile already inside Rust holds the one slot every call into Rust
+      // shares, and that slot is what keeps its engine locked.
+      final holding = Completer<void>();
+      final compile = rustCalls.run<void>(() => holding.future);
+
+      final prefetch = prefetcher.prefetch(markup: '= Hi', files: const []);
+      await Future<void>.delayed(Duration.zero);
+      expect(
+        source.asked,
+        isEmpty,
+        reason: 'reading a locked engine throws rather than waits',
+      );
+
+      holding.complete();
+      await compile;
+      await prefetch;
+      expect(source.asked, contains('cachedPackageSpecs'));
+    });
+
+    test('an archive injection waits for the slot too', () async {
+      final source = _FakeSource(['@preview/cetz:0.3.4']);
+      final prefetcher = PackagePrefetcher(
+        source,
+        registryUrl: 'https://packages.typst.org',
+        httpClient: MockClient(
+          (request) async => http.Response.bytes([1], 200),
+        ),
+      );
+
+      final holding = Completer<void>();
+      final compile = rustCalls.run<void>(() => holding.future);
+
+      final prefetch = prefetcher.prefetch(
+        markup: '#import "@preview/cetz:0.3.4": *',
+        files: const [],
+      );
+      // Long enough for the scan and the download to have happened: the
+      // injection is an engine write, and it must not start while one runs.
+      for (var i = 0; i < 10; i++) {
+        await Future<void>.delayed(Duration.zero);
+      }
+      expect(source.asked, isNot(contains('addPackageArchives')));
+
+      holding.complete();
+      await compile;
+      await prefetch;
+      expect(source.asked, contains('addPackageArchives'));
     });
   });
 }

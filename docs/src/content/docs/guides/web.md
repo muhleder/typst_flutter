@@ -156,8 +156,18 @@ instance down with an `unreachable` trap, and the call that traps fails
 quietly - a page that stops updating, with nothing in the console to say why.
 The queue costs a pass in a straight line and removes the failure entirely.
 
-What it does not cover is `#[frb(sync)]` calls - `pageCount`, `pageInfo`,
-`warnings`, `dispose` - which run on the browser's event loop and fail
-immediately if an asynchronous call is holding the same object. Reading a
-document's page count while it is being rendered is still the caller's to
-sequence, which is why the bundled widgets `await` before they read.
+What it does not cover is `#[frb(sync)]` calls - `pageCount`, `pageInfo` and
+`warnings` - which run on the browser's event loop and fail immediately if the
+object they read is write-locked. A document has nothing that write-locks it
+(`dispose` only releases this side's handle, it makes no call into Rust), so
+those reads are safe; an *engine* is write-locked for the whole of a compile,
+which is why the package's own engine reads are queued with everything else.
+
+The package's own web-only reads are queued: the package prefetch that runs
+before a compile reads the engine twice (`cachedPackageSpecs`,
+`scanPackageSpecs`) and injects archives once (`addPackageArchives`), and an
+engine is write-locked for the whole of a compile. Those three calls sit in the
+queue; only the downloads between them are outside it. Without that, a compile
+that started while the previous one was still running failed with `cannot
+synchronously read rust opaque objects while it is locked on Web: TryLockError`
+before its compile was ever asked for.

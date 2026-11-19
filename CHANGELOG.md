@@ -1,3 +1,21 @@
+## Unreleased
+
+### Fixes
+
+- **Package prefetching no longer fails a compile on the web.** A preview that
+  recompiled while the previous compile was still running failed with
+  `TypstException: PanicException(EXECUTE_SYNC_ABORT Error: cannot synchronously
+  read rust opaque objects while it is locked on Web: TryLockError)`, which a
+  caller saw as a compile error in place of the page. The prefetcher's two
+  `#[frb(sync)]` engine reads (`cachedPackageSpecs`, `scanPackageSpecs`) and its
+  archive injection (`addPackageArchives`) ran outside the queue every other
+  call into Rust goes through - so the second compile read an engine the first
+  compile had write-locked, and a sync call in a browser cannot wait for a lock.
+  Those three calls are now queued like the rest; the downloads between them
+  stay outside it, because holding the one slot the library shares through a
+  network round trip would stall every compile behind it.
+
+
 ## 3.1.0-beta.3
 
 ### Fixes
