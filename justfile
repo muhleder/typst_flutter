@@ -31,9 +31,25 @@ test: build-host
 # Run Dart tests with coverage
 test-coverage: build-host
     flutter test --coverage
+# Download the pre-built native libraries into this package
+setup:
+    dart run typst_flutter:setup
+# Install libraries built on this machine (host platform, macOS xcframework)
+setup-local:
+    dart run typst_flutter:setup --local
+# Build the iOS xcframework from source into the iOS SwiftPM package
+build-ios-local:
+    rustup target add aarch64-apple-ios aarch64-apple-ios-sim x86_64-apple-ios
+    (cd rust {{ and }} cargo build --release --target aarch64-apple-ios)
+    (cd rust {{ and }} cargo build --release --target aarch64-apple-ios-sim)
+    (cd rust {{ and }} cargo build --release --target x86_64-apple-ios)
+    lipo -create rust/target/aarch64-apple-ios-sim/release/libtypst_flutter.a rust/target/x86_64-apple-ios/release/libtypst_flutter.a -output rust/target/libtypst_flutter_sim_fat.a
+    rm -rf ios/typst_flutter/Binaries/typst_flutter.xcframework
+    mkdir -p ios/typst_flutter/Binaries
+    xcodebuild -create-xcframework -library rust/target/aarch64-apple-ios/release/libtypst_flutter.a -library rust/target/libtypst_flutter_sim_fat.a -output ios/typst_flutter/Binaries/typst_flutter.xcframework
 # Build the native library for the current host OS so tests can run
 build-host:
-    {{ if os() == "windows" { "cd rust; cargo build --release; cd ..; if (!(Test-Path .typst_flutter_prebuilt/windows)) { New-Item -ItemType Directory -Force -Path .typst_flutter_prebuilt/windows | Out-Null }; Copy-Item rust/target/release/typst_flutter.dll .typst_flutter_prebuilt/windows/typst_flutter.dll -Force" } else if os() == "macos" { "(cd rust && cargo build --release) && mkdir -p .typst_flutter_prebuilt/macos && cp rust/target/release/libtypst_flutter.a .typst_flutter_prebuilt/macos/libtypst_flutter.a" } else { "(cd rust && cargo build --release) && mkdir -p .typst_flutter_prebuilt/linux && cp rust/target/release/libtypst_flutter.so .typst_flutter_prebuilt/linux/libtypst_flutter.so" } }}
+    {{ if os() == "windows" { "cd rust; cargo build --release; cd ..; if (!(Test-Path .typst_flutter_prebuilt/windows)) { New-Item -ItemType Directory -Force -Path .typst_flutter_prebuilt/windows | Out-Null }; Copy-Item rust/target/release/typst_flutter.dll .typst_flutter_prebuilt/windows/typst_flutter.dll -Force" } else if os() == "macos" { "rustup target add aarch64-apple-darwin x86_64-apple-darwin && (cd rust && cargo build --release --target aarch64-apple-darwin) && (cd rust && cargo build --release --target x86_64-apple-darwin) && lipo -create rust/target/aarch64-apple-darwin/release/libtypst_flutter.a rust/target/x86_64-apple-darwin/release/libtypst_flutter.a -output rust/target/release/libtypst_flutter.a && dart run typst_flutter:setup --local" } else { "(cd rust && cargo build --release) && mkdir -p .typst_flutter_prebuilt/linux && cp rust/target/release/libtypst_flutter.so .typst_flutter_prebuilt/linux/libtypst_flutter.so" } }}
 # Run integration tests (crucial for FFI)
 test-integration: build-host
     cd example {{ and }} flutter test integration_test/simple_test.dart
