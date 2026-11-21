@@ -209,23 +209,16 @@ jobs:
         with:
           targets: x86_64-apple-darwin, aarch64-apple-darwin
 
+      - uses: taiki-e/install-action@just
+
       - name: Install dependencies
         run: |
           flutter pub get
           cd example
           flutter pub get
 
-      - name: Build Rust Libraries (Universal)
-        run: |
-          cd rust
-          cargo build --target x86_64-apple-darwin --release
-          cargo build --target aarch64-apple-darwin --release
-          cd ..
-          mkdir -p .typst_flutter_prebuilt/macos
-          lipo -create \
-            rust/target/x86_64-apple-darwin/release/libtypst_flutter.a \
-            rust/target/aarch64-apple-darwin/release/libtypst_flutter.a \
-            -output .typst_flutter_prebuilt/macos/libtypst_flutter.a
+      - name: Build Rust Libraries (Universal) and install the xcframework
+        run: just build-host
 
       - name: Build Flutter Example (macOS)
         run: |
