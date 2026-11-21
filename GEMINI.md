@@ -147,8 +147,8 @@ We use FRB v2 to handle the bridge between Dart and Rust. This eliminates manual
 **Opaque Document Handle.**
 `TypstCompiler.compile()` returns a `TypstDocument` wrapping a Rust `CompiledDocument` (an opaque FRB handle). The compiled `PagedDocument` lives in Rust memory and is never serialised across the FFI boundary. Rendering, SVG export, and PDF export are all lazy — they happen on demand via the handle. This eliminates the old implicit-state pattern where the engine held a "current document" and concurrent callers could clobber each other.
 
-**Automated Native Builds with Cargokit.**
-The project includes a `rust_builder` package that uses **Cargokit**. This allows the Rust library to be compiled automatically as part of the Flutter build process, provided the developer has Rust installed.
+**Apple integration is SwiftPM, not CocoaPods.**
+`ios/typst_flutter/` and `macos/typst_flutter/` each hold a `Package.swift` (package `typst_flutter`, product `typst-flutter`, source target `typst_flutter_plugin`) plus a `.binaryTarget` at `Binaries/typst_flutter.xcframework`, which `dart run typst_flutter:setup` installs. The Rust archive is statically linked into the app and kept alive by `-Wl,-u,_frb_get_rust_content_hash`, and `lib/src/bridge/bridge_io.dart` loads it with `ExternalLibrary.process()` on iOS/macOS because no dylib exists in the bundle. `rust_builder`/Cargokit and both podspecs are gone; build artifacts locally with `just build-host` (macOS, universal) or `just build-ios-local`.
 
 **Automatic Isolate Management.**
 FRB automatically executes heavy Rust functions on a background Isolate, keeping the Flutter UI thread responsive.
@@ -221,7 +221,7 @@ linked for it — and the NDK's default is 4 KB.
 
 to the linker for every Android target, which is what NDK r28 and later do by default. The flags live
 in the build script rather than in a `.cargo/config.toml` so they apply however the crate is built —
-`cross` in the release workflow, `cargo ndk` in `just build-android`, Cargokit, or a plain
+`cross` in the release workflow, `cargo ndk` in `just build-android`, or a plain
 `cargo build` — with no dependency on the linker invocation that happens to be used. The release
 workflow's `build-android` job then checks each packaged library and fails if any `PT_LOAD` is
 aligned below 16 KB, because Play checking it after publication is too late.

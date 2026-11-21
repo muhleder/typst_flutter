@@ -38,7 +38,7 @@ Add the package to your `pubspec.yaml`:
 
 ```yaml
 dependencies:
-  typst_flutter: 3.1.0-beta.4
+  typst_flutter: 3.2.0
 ```
 
 Then fetch dependencies and run the **required** one-time setup:
@@ -51,9 +51,22 @@ dart run typst_flutter:setup
 > **Why is this required?**
 > `typst_flutter` ships a native Rust library (~15MB per ABI). Because pub.dev has a 100MB size limit, the pre-built binaries live on GitHub Releases. The setup script downloads the correct binaries for your platform and places them where the Flutter build system expects them.
 >
-> You only need to run this once per version upgrade.
+> Re-run it after `flutter pub get`, `flutter pub upgrade`, `pub cache clean`
+> or `pub cache repair`, and after changing a git dependency's ref: the
+> libraries live inside the package, which for a git dependency means inside
+> the pub cache, and a new ref resolves to a new pub-cache directory.
 
-> **Tip:** The native build systems (Gradle, CocoaPods, CMake) will try to run `dart run typst_flutter:setup` automatically at build time if binaries are missing. This is best-effort — if it fails for any reason, just run it manually from your app root and rebuild.
+> **Tip:** Gradle is the only build system that still runs `dart run
+> typst_flutter:setup` automatically at build time, and only when the Android
+> libraries are missing. iOS and macOS builds do **not** auto-install anything:
+> if the libraries are missing, the Swift package fails to resolve, so run
+> setup first.
+
+> **iOS / macOS:** since 3.2.0 both platforms are integrated with Swift Package
+> Manager (Flutter 3.44+). The libraries are installed into
+> `ios/typst_flutter/Binaries/` and `macos/typst_flutter/Binaries/`, and the
+> package links the Rust archive into the app binary (no dylib, no framework,
+> nothing to embed). CocoaPods is not used at all.
 
 > **Android:** the libraries are linked for 16 KB memory pages, which Android 15
 > and later can use and Play requires of every 64-bit native library. There is
@@ -72,7 +85,9 @@ dart run typst_flutter:setup --from ./dist    # a directory of artifacts
 
 `--local` reads `rust/target/release` (host), `rust/target/<triple>/release`
 (Android ABIs) and `example/web/pkg` (web) from the package checkout, so
-`just build-host` / `just build-android` / `just build-web` are enough. Add
+`just build-host` / `just build-android` / `just build-web` are enough. On
+macOS, `--local` also wraps the host library into the xcframework SwiftPM
+needs; `just build-ios-local` builds the iOS xcframework from source. Add
 `--web` to install the wasm bundle into your app, or pass `--from <dir>` with
 release-shaped files (`libtypst_flutter_macos.a`, `typst_flutter_web.tar.gz`,
 …). Nothing is downloaded and no checksum applies: what you built is what gets
@@ -201,11 +216,22 @@ TypstCompilerProvider(
 )
 ```
 
-## Advanced Fallback (Cargokit)
+## Building the native library yourself
 
-If you are building for a custom architecture or operating completely offline, the auto-download mechanism will gracefully fail and fall back to compiling the Rust core from source using **Cargokit**.
+There is no compile-from-source fallback inside the Flutter build any more
+(Cargokit and the `rust_builder` package are gone). If you are offline, on a
+custom architecture, or hacking on the Rust side, build the artifacts and
+install them yourself:
 
-_Note: Source compilation requires a full Rust toolchain (`rustup`) installed on your build machine and may take 5–15 minutes on the first run._
+```bash
+just build-host         # host library + macOS xcframework, then setup --local
+just build-ios-local    # iOS xcframework (device arm64 + simulator fat)
+just build-android      # Android ABIs
+dart run typst_flutter:setup --local
+```
+
+This needs a Rust toolchain (`rustup`) and Xcode; the first build takes several
+minutes because Typst is compiled with fat LTO.
 
 ## Testing
 

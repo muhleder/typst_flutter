@@ -23,8 +23,14 @@ dart run typst_flutter:setup
 ```
 
 This downloads the prebuilt native Typst libraries (~15MB) from GitHub Releases
-and caches them in your pub cache. You only need to do this once per version
-upgrade — no Rust toolchain required.
+and installs them inside the package — no Rust toolchain required. Re-run it
+after `flutter pub get`, `flutter pub upgrade`, `pub cache clean`/`repair`, and
+after changing a git dependency's ref: a new ref resolves to a new pub-cache
+directory, and the libraries live inside the package.
+
+On iOS and macOS the libraries are installed as xcframeworks inside
+`ios/typst_flutter/Binaries/` and `macos/typst_flutter/Binaries/`, which is what
+the Swift packages link.
 
 > **Why is this step needed?**
 > pub.dev has a 100MB package size limit. The native `.so`/`.dll`/`.a` binaries
@@ -33,11 +39,11 @@ upgrade — no Rust toolchain required.
 
 ### Build-time auto-download
 
-The native build scripts (Gradle for Android, CocoaPods for iOS/macOS, CMake for
-Linux/Windows) will attempt to run `dart run typst_flutter:setup` automatically
-if the binaries aren’t already present when you build. This is a best-effort
-convenience — **if it fails for any reason** (no internet, permission issue, etc.),
-just run the command manually from your app root and rebuild:
+Only Gradle still auto-runs `dart run typst_flutter:setup`, and only when the
+Android libraries are missing. iOS, macOS, Linux and Windows do not: if the
+libraries are absent, the iOS/macOS Swift package fails to resolve (SwiftPM
+reports the missing binary target), and the desktop builds fail with a message
+telling you to run:
 
 ```bash
 dart run typst_flutter:setup
@@ -109,16 +115,18 @@ class TypstPreview extends StatelessWidget {
 }
 ```
 
-## Advanced: Building from Source (Cargokit fallback)
+## Advanced: Building from source
 
-If the prebuilt binaries aren't available for your target (e.g. an unsupported
-architecture or a fully-offline build machine), and the auto-download also fails,
-Android and iOS builds will fall back to **Cargokit**, which compiles the Rust
-core from scratch.
+There is no compile-from-source fallback inside the Flutter build (Cargokit and
+the `rust_builder` package were removed in 3.2.0). To build the native library
+yourself — offline, on a custom architecture, or while hacking on the Rust side:
 
-To use the source-compilation fallback, install [Rust](https://rustup.rs/) on
-your build machine. First-time compilation will take 5–15 minutes depending on
-your CPU.
+```bash
+just build-host         # host library + macOS xcframework
+just build-ios-local    # iOS xcframework (device arm64 + simulator fat)
+just build-android      # Android ABIs
+dart run typst_flutter:setup --local
+```
 
-Linux and Windows desktop builds do **not** have a Cargokit fallback — they will
-emit a clear error message asking you to run `dart run typst_flutter:setup`.
+This needs [Rust](https://rustup.rs/) and, for iOS/macOS, Xcode. First-time
+compilation takes several minutes because Typst is built with fat LTO.

@@ -37,6 +37,14 @@ Pushing the tag will automatically trigger the `release.yml` workflow on GitHub 
 
 4.  **Generate Checksums:** A `SHA256SUMS.txt` file is generated containing the checksums for all binary artifacts. This file is also attached to the release.
 
+    The Apple side of the release is unchanged by the SwiftPM migration: iOS
+    ships `libtypst_flutter_ios.xcframework.zip` and macOS ships the universal
+    `libtypst_flutter_macos.a` (no macOS xcframework asset is published —
+    `dart run typst_flutter:setup` wraps the `.a` into
+    `macos/typst_flutter/Binaries/typst_flutter.xcframework` on the consumer's
+    machine). Consumers must re-run `dart run typst_flutter:setup` after a
+    version bump, because the xcframeworks live inside the package.
+
 5.  **Publish to pub.dev:** After all artifacts are successfully uploaded, the workflow publishes the Dart package (which only contains source code) to pub.dev using trusted OIDC authentication.
 
 ### 4. Finalize the Release
@@ -47,7 +55,7 @@ The GitHub Release is created as a draft. You will need to manually review it, a
 
 If any part of the CI pipeline fails, you may need to perform some steps manually.
 
-1.  **Build Binaries Locally:** Use the cross-compilation tools (e.g., `cross`) to build the artifacts for each target. The specific targets are listed in `GEMINI.md`.
+1.  **Build Binaries Locally:** Use the cross-compilation tools (e.g., `cross`) to build the artifacts for each target. The specific targets are listed in `GEMINI.md`. For Apple, `just build-host` produces the universal macOS library and `just build-ios-local` the iOS xcframework (package `rust/target/…/release/libtypst_flutter.a` back into the release-shaped assets).
 2.  **Manually Create GitHub Release:** Go to the "Releases" page in the GitHub repository and create a new release from the tag.
 3.  **Upload Artifacts:** Manually upload the compiled binaries and the checksum file.
 4.  **Publish to pub.dev:** Run `dart pub publish` from the root of the repository. You will need to have `pub.dev` credentials configured locally.
