@@ -44,7 +44,6 @@ test-rust:
 get:
     flutter pub get
     cd example {{ and }} flutter pub get
-    cd rust_builder {{ and }} flutter pub get
 # Generate FRB bindings
 # (rustfmt the generated Rust too: FRB 2.14 emits an import order rustfmt
 # disagrees with, and `fmt-rust-check` would then fail on a fresh generation)
