@@ -56,11 +56,11 @@ dart run typst_flutter:setup
 > libraries live inside the package, which for a git dependency means inside
 > the pub cache, and a new ref resolves to a new pub-cache directory.
 
-> **Tip:** Gradle is the only build system that still runs `dart run
-> typst_flutter:setup` automatically at build time, and only when the Android
-> libraries are missing. iOS and macOS builds do **not** auto-install anything:
-> if the libraries are missing, the Swift package fails to resolve, so run
-> setup first.
+> **Tip:** Gradle (Android) and CMake (Linux/Windows) still run
+> `dart run typst_flutter:setup` automatically at build time when their
+> libraries are missing. iOS and macOS never do: if the Apple libraries are
+> gone, the Swift package fails to resolve instead of compiling anything, so
+> run setup first.
 
 > **iOS / macOS:** since 3.2.0 both platforms are integrated with Swift Package
 > Manager (Flutter 3.44+). The libraries are installed into

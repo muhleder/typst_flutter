@@ -39,11 +39,10 @@ the Swift packages link.
 
 ### Build-time auto-download
 
-Only Gradle still auto-runs `dart run typst_flutter:setup`, and only when the
-Android libraries are missing. iOS, macOS, Linux and Windows do not: if the
-libraries are absent, the iOS/macOS Swift package fails to resolve (SwiftPM
-reports the missing binary target), and the desktop builds fail with a message
-telling you to run:
+Gradle (Android) and CMake (Linux/Windows) still run
+`dart run typst_flutter:setup` automatically when their libraries are missing.
+iOS and macOS do not: if the libraries are absent, the Swift package fails to
+resolve and SwiftPM reports the missing binary target, so run:
 
 ```bash
 dart run typst_flutter:setup

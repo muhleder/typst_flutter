@@ -43,6 +43,80 @@ const _macosXcframeworkRel =
 /// [_macosXcframeworkRel].
 const _macosLibraryRel = '$_prebuiltDir/macos/libtypst_flutter.a';
 
+/// The two architectures `flutter build macos --release` links together.
+const _macosReleaseArchitectures = {'arm64', 'x86_64'};
+
+/// Reads the architectures out of `lipo -info` output.
+///
+/// Fat: `Architectures in the fat file: lib.a are: x86_64 arm64`
+/// Thin: `Non-fat file: lib.a is architecture: arm64`
+Set<String> parseLipoArchitectures(String output) {
+  final fat = RegExp(r'are:\s*(.+)$', multiLine: true).firstMatch(output);
+  final thin = RegExp(
+    r'is architecture:\s*(\S+)',
+    multiLine: true,
+  ).firstMatch(output);
+  final match = fat ?? thin;
+  if (match == null) return <String>{};
+  return match
+      .group(1)!
+      .split(RegExp(r'\s+'))
+      .where((arch) => arch.isNotEmpty)
+      .toSet();
+}
+
+/// The warning to print when a macOS library cannot serve a universal release
+/// build, or null when it can.
+///
+/// A single-architecture library is fine for `flutter run` (debug links the
+/// active arch only), but `flutter build macos --release` links both, so the
+/// next error would be an arch-mismatch linker failure that never mentions
+/// this file.
+String? macosArchitectureWarning(Set<String> architectures) {
+  final missing = _macosReleaseArchitectures.difference(architectures);
+  if (missing.isEmpty) return null;
+  final found = architectures.isEmpty
+      ? 'no readable architectures'
+      : architectures.join(' + ');
+  return 'The macOS library has $found, but a release build links '
+      '${_macosReleaseArchitectures.join(' + ')}. Debug builds still work. '
+      'Run `just build-host` (or lipo both darwin targets) and re-run setup '
+      'before a release build.';
+}
+
+/// Runs `xcodebuild -create-xcframework`, turning a missing tool and a failed
+/// run into messages that name the fix.
+///
+/// [executable] exists so tests can exercise the missing-tool path.
+Future<void> xcodebuildCreateXcframework({
+  required String library,
+  required String output,
+  String executable = 'xcodebuild',
+}) async {
+  final ProcessResult result;
+  try {
+    result = await Process.run(executable, [
+      '-create-xcframework',
+      '-library',
+      library,
+      '-output',
+      output,
+    ]);
+  } on ProcessException {
+    throw Exception(
+      'Could not run $executable (not found or not executable).\n'
+      'Install Xcode with its command line tools, then re-run setup.',
+    );
+  }
+  if (result.exitCode != 0) {
+    throw Exception(
+      'xcodebuild -create-xcframework failed (exit ${result.exitCode}).\n'
+      '${result.stderr}\n'
+      'Install Xcode with its command line tools, then re-run setup.',
+    );
+  }
+}
+
 void _printHelp() {
   print('''
 dart run typst_flutter:setup [options]
@@ -222,7 +296,7 @@ class SetupRunner {
        _packageRootOverride = packageRoot,
        _workingDirectory = workingDirectory,
        _hostPlatform = hostPlatform ?? Platform.operatingSystem,
-       _createXcframework = createXcframework ?? _xcodebuildCreateXcframework;
+       _createXcframework = createXcframework ?? xcodebuildCreateXcframework;
 
   final SetupOptions _opts;
   final Future<http.Response> Function(Uri url) _httpGet;
@@ -234,10 +308,7 @@ class SetupRunner {
   final String _hostPlatform;
 
   /// Wraps a macOS static library into an xcframework. Injected for tests.
-  final Future<void> Function({
-    required String library,
-    required String output,
-  })
+  final Future<void> Function({required String library, required String output})
   _createXcframework;
 
   late final String _packageRoot;
@@ -351,6 +422,10 @@ class SetupRunner {
     if (_hostPlatform != 'macos') return;
     final library = p.join(_packageRoot, _macosLibraryRel);
     if (!File(library).existsSync()) return;
+    final warning = macosArchitectureWarning(
+      await _libraryArchitectures(library),
+    );
+    if (warning != null) print('  ⚠  $warning');
     final output = p.join(_packageRoot, _macosXcframeworkRel);
     final existing = Directory(output);
     if (existing.existsSync()) existing.deleteSync(recursive: true);
@@ -359,24 +434,13 @@ class SetupRunner {
     print('  ✓ ${p.relative(output, from: _packageRoot)}');
   }
 
-  /// The real wrap: `xcodebuild -create-xcframework`.
-  static Future<void> _xcodebuildCreateXcframework({
-    required String library,
-    required String output,
-  }) async {
-    final result = await Process.run('xcodebuild', [
-      '-create-xcframework',
-      '-library',
-      library,
-      '-output',
-      output,
-    ]);
-    if (result.exitCode != 0) {
-      throw Exception(
-        'xcodebuild -create-xcframework failed (exit ${result.exitCode}).\n'
-        '${result.stderr}\n'
-        'Install Xcode with its command line tools, then re-run setup.',
-      );
+  /// Reads a static library's architectures with `lipo -info`.
+  Future<Set<String>> _libraryArchitectures(String library) async {
+    try {
+      final result = await Process.run('lipo', ['-info', library]);
+      return parseLipoArchitectures('${result.stdout}');
+    } on ProcessException {
+      return <String>{};
     }
   }
 
