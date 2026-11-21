@@ -23,6 +23,10 @@ linux/libtypst_flutter.so
 # Ensure the prebuilt download cache is not published
 .typst_flutter_prebuilt/
 
+# Installed by the setup script, never published.
+ios/typst_flutter/Binaries/
+macos/typst_flutter/Binaries/
+
 # Cargo build targets (just in case they aren't gitignored)
 rust/target/
 rust_builder/target/
