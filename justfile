@@ -5,6 +5,15 @@ set windows-shell := ["powershell.exe", "-NoProfile", "-Command"]
 # Chaining operator: powershell.exe uses ; while sh uses &&
 and := if os() == "windows" { ";" } else { "&&" }
 
+# Apple deployment targets. rustc stamps its own objects with the target's
+# default minimum, but objects built by C build scripts (aws-lc, the
+# flutter_rust_bridge shim) inherit the SDK's default instead, which makes every
+# consumer link emit "was built for newer 'macOS' version than being linked".
+# Keep these in step with the Package.swift platforms.
+export MACOSX_DEPLOYMENT_TARGET := "11.0"
+export CMAKE_OSX_DEPLOYMENT_TARGET := "11.0"
+export IPHONEOS_DEPLOYMENT_TARGET := "13.0"
+
 # --- Tasks ---
 
 # Dart format all relevant directories

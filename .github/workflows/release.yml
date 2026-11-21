@@ -97,6 +97,11 @@ jobs:
     runs-on: macos-latest
     permissions:
       contents: write
+    env:
+      # Objects built by C build scripts inherit the SDK's default minimum
+      # instead of the target's, which makes every consumer link warn per
+      # object. Keep in step with ios/typst_flutter/Package.swift.
+      IPHONEOS_DEPLOYMENT_TARGET: "13.0"
     steps:
       - uses: actions/checkout@v7
 
@@ -133,6 +138,16 @@ jobs:
             -library rust/target/aarch64-apple-ios/release/libtypst_flutter.a \
             -library rust/target/libtypst_flutter_sim_fat.a \
             -output typst_flutter.xcframework
+
+      - name: Check the deployment target stamps
+        run: |
+          sh tool/check_deployment_stamps.sh \
+            typst_flutter.xcframework/ios-arm64/libtypst_flutter.a ios 13.0
+          # Rust's iOS-simulator target minimum is 14.0, and rustc passes it to
+          # the C build scripts, so simulator objects sit at 14.0 by design.
+          sh tool/check_deployment_stamps.sh \
+            typst_flutter.xcframework/ios-arm64_x86_64-simulator/libtypst_flutter_sim_fat.a \
+            ios 14.0
 
       - name: Zip XCFramework
         run: zip -r libtypst_flutter_ios.xcframework.zip typst_flutter.xcframework
@@ -215,6 +230,11 @@ jobs:
     runs-on: macos-latest
     permissions:
       contents: write
+    env:
+      # See the build-ios job. CMAKE_OSX_DEPLOYMENT_TARGET is what aws-lc's
+      # CMake build honours when it bypasses the env var above.
+      MACOSX_DEPLOYMENT_TARGET: "11.0"
+      CMAKE_OSX_DEPLOYMENT_TARGET: "11.0"
     steps:
       - uses: actions/checkout@v7
 
@@ -240,6 +260,8 @@ jobs:
             rust/target/x86_64-apple-darwin/release/libtypst_flutter.a \
             rust/target/aarch64-apple-darwin/release/libtypst_flutter.a \
             -output artifacts/libtypst_flutter_macos.a
+          sh tool/check_deployment_stamps.sh \
+            artifacts/libtypst_flutter_macos.a macos 11.0
 
       - uses: actions/upload-artifact@v7
         with:

@@ -1,3 +1,15 @@
+## 3.2.1
+
+- Fix the macOS deployment-target warnings: objects compiled by C build scripts
+  (aws-lc, the flutter_rust_bridge shim) were stamped with the CI runner's SDK
+  default, so every consumer link warned "was built for newer 'macOS' version
+  than being linked". The release jobs and the local `just` recipes now set
+  `MACOSX_DEPLOYMENT_TARGET` / `CMAKE_OSX_DEPLOYMENT_TARGET` / `IPHONEOS_DEPLOYMENT_TARGET`,
+  and `tool/check_deployment_stamps.sh` fails the release if any object claims a
+  floor above the package's.
+- macOS now declares `.macOS("11.0")` in `Package.swift`, which is what the
+  arm64 objects already required (it was 10.15).
+
 ## 3.2.0
 
 - **Breaking:** iOS and macOS are integrated through Swift Package Manager

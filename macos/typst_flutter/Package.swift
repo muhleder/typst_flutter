@@ -11,7 +11,7 @@ import PackageDescription
 
 let package = Package(
     name: "typst_flutter",
-    platforms: [.macOS("10.15")],
+    platforms: [.macOS("11.0")],
     products: [
         .library(name: "typst-flutter", targets: ["typst_flutter_plugin"]),
     ],

@@ -63,7 +63,8 @@ dart run typst_flutter:setup
 > run setup first.
 
 > **iOS / macOS:** since 3.2.0 both platforms are integrated with Swift Package
-> Manager (Flutter 3.44+). The libraries are installed into
+> Manager (Flutter 3.44+); the packages declare iOS 13.0 and macOS 11.0 as
+> their floors. The libraries are installed into
 > `ios/typst_flutter/Binaries/` and `macos/typst_flutter/Binaries/`, and the
 > package links the Rust archive into the app binary (no dylib, no framework,
 > nothing to embed). CocoaPods is not used at all.
