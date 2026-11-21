@@ -1,3 +1,14 @@
+## 3.2.0
+
+- **Breaking:** iOS and macOS are integrated through Swift Package Manager
+  only. The CocoaPods podspecs, the `rust_builder` package and Cargokit are
+  gone. Requires Flutter 3.44+ (SwiftPM on by default).
+- The native libraries are installed inside `ios/typst_flutter/Binaries/` and
+  `macos/typst_flutter/Binaries/`; `dart run typst_flutter:setup` must be run
+  after `flutter pub get` and after any dependency change.
+- `just build-host` now builds a universal macOS library; `just build-ios-local`
+  builds the iOS xcframework from source.
+
 ## 3.1.0-beta.4
 
 ### Fixes

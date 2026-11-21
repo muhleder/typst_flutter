@@ -31,6 +31,92 @@ const _fallbackRepo = RepositorySlug('ajmalbuv', 'typst_flutter');
 const _prebuiltDir = '.typst_flutter_prebuilt';
 const _versionFile = '$_prebuiltDir/.version';
 
+/// Where SwiftPM reads the Apple binaries from. SwiftPM only accepts paths
+/// inside the package, so these live next to each platform's Package.swift
+/// rather than in [_prebuiltDir].
+const _iosXcframeworkRel =
+    'ios/typst_flutter/Binaries/typst_flutter.xcframework';
+const _macosXcframeworkRel =
+    'macos/typst_flutter/Binaries/typst_flutter.xcframework';
+
+/// The macOS static library, downloaded or built, before it is wrapped into
+/// [_macosXcframeworkRel].
+const _macosLibraryRel = '$_prebuiltDir/macos/libtypst_flutter.a';
+
+/// The two architectures `flutter build macos --release` links together.
+const _macosReleaseArchitectures = {'arm64', 'x86_64'};
+
+/// Reads the architectures out of `lipo -info` output.
+///
+/// Fat: `Architectures in the fat file: lib.a are: x86_64 arm64`
+/// Thin: `Non-fat file: lib.a is architecture: arm64`
+Set<String> parseLipoArchitectures(String output) {
+  final fat = RegExp(r'are:\s*(.+)$', multiLine: true).firstMatch(output);
+  final thin = RegExp(
+    r'is architecture:\s*(\S+)',
+    multiLine: true,
+  ).firstMatch(output);
+  final match = fat ?? thin;
+  if (match == null) return <String>{};
+  return match
+      .group(1)!
+      .split(RegExp(r'\s+'))
+      .where((arch) => arch.isNotEmpty)
+      .toSet();
+}
+
+/// The warning to print when a macOS library cannot serve a universal release
+/// build, or null when it can.
+///
+/// A single-architecture library is fine for `flutter run` (debug links the
+/// active arch only), but `flutter build macos --release` links both, so the
+/// next error would be an arch-mismatch linker failure that never mentions
+/// this file.
+String? macosArchitectureWarning(Set<String> architectures) {
+  final missing = _macosReleaseArchitectures.difference(architectures);
+  if (missing.isEmpty) return null;
+  final found = architectures.isEmpty
+      ? 'no readable architectures'
+      : architectures.join(' + ');
+  return 'The macOS library has $found, but a release build links '
+      '${_macosReleaseArchitectures.join(' + ')}. Debug builds still work. '
+      'Run `just build-host` (or lipo both darwin targets) and re-run setup '
+      'before a release build.';
+}
+
+/// Runs `xcodebuild -create-xcframework`, turning a missing tool and a failed
+/// run into messages that name the fix.
+///
+/// [executable] exists so tests can exercise the missing-tool path.
+Future<void> xcodebuildCreateXcframework({
+  required String library,
+  required String output,
+  String executable = 'xcodebuild',
+}) async {
+  final ProcessResult result;
+  try {
+    result = await Process.run(executable, [
+      '-create-xcframework',
+      '-library',
+      library,
+      '-output',
+      output,
+    ]);
+  } on ProcessException {
+    throw Exception(
+      'Could not run $executable (not found or not executable).\n'
+      'Install Xcode with its command line tools, then re-run setup.',
+    );
+  }
+  if (result.exitCode != 0) {
+    throw Exception(
+      'xcodebuild -create-xcframework failed (exit ${result.exitCode}).\n'
+      '${result.stderr}\n'
+      'Install Xcode with its command line tools, then re-run setup.',
+    );
+  }
+}
+
 void _printHelp() {
   print('''
 dart run typst_flutter:setup [options]
@@ -75,7 +161,7 @@ class _Artifact {
   /// Filename as published on GitHub Releases.
   final String filename;
 
-  /// Path relative to [_prebuiltDir] where the file should be placed.
+  /// Path relative to the package root where the file should be placed.
   final String destination;
 }
 
@@ -93,19 +179,19 @@ List<_Artifact> _artifactsForPlatform(String platform) {
   const androidArtifacts = [
     _Artifact(
       filename: 'libtypst_flutter_android_arm64.so',
-      destination: 'android/arm64-v8a/libtypst_flutter.so',
+      destination: '$_prebuiltDir/android/arm64-v8a/libtypst_flutter.so',
     ),
     _Artifact(
       filename: 'libtypst_flutter_android_armv7.so',
-      destination: 'android/armeabi-v7a/libtypst_flutter.so',
+      destination: '$_prebuiltDir/android/armeabi-v7a/libtypst_flutter.so',
     ),
     _Artifact(
       filename: 'libtypst_flutter_android_x64.so',
-      destination: 'android/x86_64/libtypst_flutter.so',
+      destination: '$_prebuiltDir/android/x86_64/libtypst_flutter.so',
     ),
     _Artifact(
       filename: 'libtypst_flutter_android_x86.so',
-      destination: 'android/x86/libtypst_flutter.so',
+      destination: '$_prebuiltDir/android/x86/libtypst_flutter.so',
     ),
   ];
 
@@ -115,11 +201,11 @@ List<_Artifact> _artifactsForPlatform(String platform) {
       return [
         const _Artifact(
           filename: 'libtypst_flutter_macos.a',
-          destination: 'macos/libtypst_flutter.a',
+          destination: _macosLibraryRel,
         ),
         const _Artifact(
           filename: 'libtypst_flutter_ios.xcframework.zip',
-          destination: 'ios/',
+          destination: _iosXcframeworkRel,
         ),
         ...androidArtifacts,
       ];
@@ -129,7 +215,7 @@ List<_Artifact> _artifactsForPlatform(String platform) {
       return [
         const _Artifact(
           filename: 'libtypst_flutter_linux_x64.so',
-          destination: 'linux/libtypst_flutter.so',
+          destination: '$_prebuiltDir/linux/libtypst_flutter.so',
         ),
         ...androidArtifacts,
       ];
@@ -139,7 +225,7 @@ List<_Artifact> _artifactsForPlatform(String platform) {
       return [
         const _Artifact(
           filename: 'typst_flutter_windows_x64.dll',
-          destination: 'windows/typst_flutter.dll',
+          destination: '$_prebuiltDir/windows/typst_flutter.dll',
         ),
         ...androidArtifacts,
       ];
@@ -156,37 +242,37 @@ List<_Artifact> _allArtifacts() => [
   // Android — all 4 ABIs
   const _Artifact(
     filename: 'libtypst_flutter_android_arm64.so',
-    destination: 'android/arm64-v8a/libtypst_flutter.so',
+    destination: '$_prebuiltDir/android/arm64-v8a/libtypst_flutter.so',
   ),
   const _Artifact(
     filename: 'libtypst_flutter_android_armv7.so',
-    destination: 'android/armeabi-v7a/libtypst_flutter.so',
+    destination: '$_prebuiltDir/android/armeabi-v7a/libtypst_flutter.so',
   ),
   const _Artifact(
     filename: 'libtypst_flutter_android_x64.so',
-    destination: 'android/x86_64/libtypst_flutter.so',
+    destination: '$_prebuiltDir/android/x86_64/libtypst_flutter.so',
   ),
   const _Artifact(
     filename: 'libtypst_flutter_android_x86.so',
-    destination: 'android/x86/libtypst_flutter.so',
+    destination: '$_prebuiltDir/android/x86/libtypst_flutter.so',
   ),
   // iOS — XCFramework zip (device + simulator)
   const _Artifact(
     filename: 'libtypst_flutter_ios.xcframework.zip',
-    destination: 'ios/',
+    destination: _iosXcframeworkRel,
   ),
   // Desktop
   const _Artifact(
     filename: 'libtypst_flutter_linux_x64.so',
-    destination: 'linux/libtypst_flutter.so',
+    destination: '$_prebuiltDir/linux/libtypst_flutter.so',
   ),
   const _Artifact(
     filename: 'typst_flutter_windows_x64.dll',
-    destination: 'windows/typst_flutter.dll',
+    destination: '$_prebuiltDir/windows/typst_flutter.dll',
   ),
   const _Artifact(
     filename: 'libtypst_flutter_macos.a',
-    destination: 'macos/libtypst_flutter.a',
+    destination: _macosLibraryRel,
   ),
 ];
 
@@ -203,14 +289,27 @@ class SetupRunner {
     Future<http.Response> Function(Uri url)? httpGet,
     String? packageRoot,
     String? workingDirectory,
+    String? hostPlatform,
+    Future<void> Function({required String library, required String output})?
+    createXcframework,
   }) : _httpGet = httpGet ?? http.get,
        _packageRootOverride = packageRoot,
-       _workingDirectory = workingDirectory;
+       _workingDirectory = workingDirectory,
+       _hostPlatform = hostPlatform ?? Platform.operatingSystem,
+       _createXcframework = createXcframework ?? xcodebuildCreateXcframework;
 
   final SetupOptions _opts;
   final Future<http.Response> Function(Uri url) _httpGet;
   final String? _packageRootOverride;
   final String? _workingDirectory;
+
+  /// The OS the artifacts are installed for. Injected so the Apple path is
+  /// testable on Linux and Windows CI.
+  final String _hostPlatform;
+
+  /// Wraps a macOS static library into an xcframework. Injected for tests.
+  final Future<void> Function({required String library, required String output})
+  _createXcframework;
 
   late final String _packageRoot;
   late final String _version;
@@ -259,7 +358,7 @@ class SetupRunner {
     }
 
     // Download platform-appropriate artifacts
-    final platform = Platform.operatingSystem;
+    final platform = _hostPlatform;
     final artifacts = _opts.allPlatforms
         ? _allArtifacts()
         : _artifactsForPlatform(platform);
@@ -282,7 +381,11 @@ class SetupRunner {
       }
     }
 
+    // Wrap the macOS static library into the SPM binary target.
+    await _wrapMacosLibrary();
+
     // Write version stamp
+    Directory(p.join(_packageRoot, _prebuiltDir)).createSync(recursive: true);
     final versionPath = p.join(_packageRoot, _prebuiltDir, '.version');
     File(versionPath).writeAsStringSync(_version);
 
@@ -302,7 +405,43 @@ class SetupRunner {
     final stampPath = p.join(_packageRoot, _versionFile);
     final stampFile = File(stampPath);
     if (!stampFile.existsSync()) return false;
-    return stampFile.readAsStringSync().trim() == _version;
+    if (stampFile.readAsStringSync().trim() != _version) return false;
+    // A stamp written by an older (CocoaPods-era) setup says nothing about the
+    // xcframeworks SwiftPM now needs.
+    return _hostPlatform != 'macos' || _appleXcframeworksPresent();
+  }
+
+  /// Whether both SwiftPM binary targets have been installed.
+  bool _appleXcframeworksPresent() =>
+      Directory(p.join(_packageRoot, _iosXcframeworkRel)).existsSync() &&
+      Directory(p.join(_packageRoot, _macosXcframeworkRel)).existsSync();
+
+  /// Wraps the downloaded or locally built macOS static library into the
+  /// xcframework the macOS SwiftPM package links.
+  Future<void> _wrapMacosLibrary() async {
+    if (_hostPlatform != 'macos') return;
+    final library = p.join(_packageRoot, _macosLibraryRel);
+    if (!File(library).existsSync()) return;
+    final warning = macosArchitectureWarning(
+      await _libraryArchitectures(library),
+    );
+    if (warning != null) print('  ⚠  $warning');
+    final output = p.join(_packageRoot, _macosXcframeworkRel);
+    final existing = Directory(output);
+    if (existing.existsSync()) existing.deleteSync(recursive: true);
+    Directory(p.dirname(output)).createSync(recursive: true);
+    await _createXcframework(library: library, output: output);
+    print('  ✓ ${p.relative(output, from: _packageRoot)}');
+  }
+
+  /// Reads a static library's architectures with `lipo -info`.
+  Future<Set<String>> _libraryArchitectures(String library) async {
+    try {
+      final result = await Process.run('lipo', ['-info', library]);
+      return parseLipoArchitectures('${result.stdout}');
+    } on ProcessException {
+      return <String>{};
+    }
   }
 
   /// Installs artifacts that were built on this machine instead of downloading
@@ -323,7 +462,7 @@ class SetupRunner {
 
     final wanted = _opts.allPlatforms
         ? _allArtifacts()
-        : _artifactsForPlatform(Platform.operatingSystem);
+        : _artifactsForPlatform(_hostPlatform);
 
     var installed = 0;
     final missing = <String>[];
@@ -353,6 +492,8 @@ class SetupRunner {
     if (missing.isNotEmpty) {
       print('  ⚠  Not found locally: ${missing.join(', ')}');
     }
+
+    await _wrapMacosLibrary();
 
     Directory(p.join(_packageRoot, _prebuiltDir)).createSync(recursive: true);
     File(p.join(_packageRoot, _versionFile)).writeAsStringSync(_version);
@@ -393,7 +534,8 @@ class SetupRunner {
     ]) {
       final abi = SetupOptions.androidAbiForTarget(triple);
       if (abi == null ||
-          artifact.destination != 'android/$abi/libtypst_flutter.so') {
+          artifact.destination !=
+              '$_prebuiltDir/android/$abi/libtypst_flutter.so') {
         continue;
       }
       final file = File(
@@ -614,14 +756,30 @@ class SetupRunner {
   void _writeArtifact(_Artifact artifact, List<int> bytes) {
     final destPath = p.join(
       _packageRoot,
-      _prebuiltDir,
       p.joinAll(artifact.destination.split('/')),
     );
     Directory(p.dirname(destPath)).createSync(recursive: true);
 
     if (artifact.filename.endsWith('.zip')) {
       final archive = ZipDecoder().decodeBytes(bytes);
-      extractArchiveToDiskSync(archive, destPath);
+      if (artifact.destination.endsWith('.xcframework')) {
+        // The archive already contains the `typst_flutter.xcframework/`
+        // directory, so unpack next to it and replace the previous copy
+        // rather than nesting one inside the other.
+        final target = Directory(destPath);
+        if (target.existsSync()) target.deleteSync(recursive: true);
+        final parent = p.dirname(destPath);
+        for (final entry in archive.files) {
+          if (!entry.isFile) continue;
+          final name = entry.name;
+          if (p.isAbsolute(name) || p.split(name).contains('..')) continue;
+          final file = File(p.join(parent, p.joinAll(name.split('/'))));
+          file.parent.createSync(recursive: true);
+          file.writeAsBytesSync(entry.content as List<int>);
+        }
+      } else {
+        extractArchiveToDiskSync(archive, destPath);
+      }
     } else {
       File(destPath).writeAsBytesSync(bytes);
     }

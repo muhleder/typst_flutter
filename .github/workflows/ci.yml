@@ -89,6 +89,39 @@ jobs:
         if: runner.os == 'Linux'
         run: xvfb-run just test-integration
 
+  ios-build:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: "stable"
+          cache: true
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-ios,aarch64-apple-ios-sim,x86_64-apple-ios
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: rust
+      - uses: taiki-e/install-action@just
+      - name: Install dependencies
+        run: just get
+      - name: Build the iOS xcframework
+        run: just build-ios-local
+      - name: Build the example for the simulator
+        run: cd example && flutter build ios --simulator
+      - name: Build the example for a device and check the Rust symbols
+        run: |
+          cd example
+          flutter build ios --no-codesign
+          # A release link runs -dead_strip; the SwiftPM linker settings must
+          # keep every frb_* symbol in the dynamic table, or the app builds and
+          # then dies on the first dlsym.
+          count=$(nm -g build/ios/iphoneos/Runner.app/Runner | grep -c '_frb_' || true)
+          echo "Rust symbols exported by the app binary: $count"
+          test "$count" -ge 10
+
+
   rust-test:
     strategy:
       fail-fast: false

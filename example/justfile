@@ -36,7 +36,7 @@ fix:
     dart fix --apply
 # Format Dart code
 fmt:
-    dart format lib example rust_builder bin
+    dart format lib example bin
 # fix and format
 prep:
     fix fmt

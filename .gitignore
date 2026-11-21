@@ -44,6 +44,11 @@ rust/.cargo/config.toml
 # Pre-built binaries downloaded by `dart run typst_flutter:setup`
 .typst_flutter_prebuilt/
 
+# Apple binaries installed by `dart run typst_flutter:setup`; SwiftPM reads
+# them from inside the platform packages.
+ios/typst_flutter/Binaries/
+macos/typst_flutter/Binaries/
+
 # Platform-specific locally-built output directories
 android/src/main/jniLibs/
 ios/Frameworks/

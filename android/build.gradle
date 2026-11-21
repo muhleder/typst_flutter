@@ -110,28 +110,9 @@ android {
 }
 
 if (!usePrebuilt) {
-    logger.lifecycle('''
-    ┌──────────────────────────────────────────────────────────────────┐
-    │  typst_flutter: pre-built binaries not found.                    │
-    │  Falling back to Cargokit (requires Rust on build machine).      │
-    │                                                                  │
-    │  To avoid compiling from source, run once from your app root:    │
-    │    dart run typst_flutter:setup                                  │
-    └──────────────────────────────────────────────────────────────────┘
-    ''')
-    def cargokitScript = new File(project.projectDir, '../rust_builder/cargokit/gradle/plugin.gradle')
-    if (cargokitScript.exists()) {
-        apply from: cargokitScript.absolutePath
-        cargokit {
-            manifestDir = '../rust'
-            libname = 'typst_flutter'
-        }
-    } else {
-        throw new GradleException(
-            'typst_flutter: Prebuilt binaries are missing, auto-download failed, '
-            + 'AND Cargokit is missing from rust_builder. '
-            + 'Run `dart run typst_flutter:setup` from your app root, or '
-            + 'run `flutter_rust_bridge_codegen integrate` to restore Cargokit.'
-        )
-    }
+    throw new GradleException(
+        'typst_flutter: pre-built native libraries are missing.\n'
+        + 'Run once from your app root, then rebuild:\n'
+        + '    dart run typst_flutter:setup'
+    )
 }
