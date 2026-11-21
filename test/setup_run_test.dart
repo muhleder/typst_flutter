@@ -137,6 +137,8 @@ void main() {
             httpGet: fakeGet,
             packageRoot: packageDir,
             workingDirectory: appDir,
+            // The fixture's .a is not a real Mach-O, so stub the wrap out.
+            createXcframework: ({required library, required output}) async {},
           ).run();
 
           expect(
@@ -200,6 +202,7 @@ void main() {
             httpGet: fakeGet,
             packageRoot: packageDir,
             workingDirectory: appDir,
+            createXcframework: ({required library, required output}) async {},
           ).run();
 
           expect(requested, isEmpty);
@@ -317,6 +320,158 @@ repository: https://github.com/muhleder/typst_flutter
         requested.where((url) => url.endsWith('typst_flutter_web.tar.gz')),
         isEmpty,
       );
+    });
+  });
+
+  group('apple swift package artifacts', () {
+    late Directory root;
+    late String packageDir;
+    late String appDir;
+    late List<({String library, String output})> wrapCalls;
+
+    setUp(() {
+      root = Directory.systemTemp.createTempSync('typst_setup_apple');
+      packageDir = p.join(root.path, 'pkg');
+      appDir = p.join(root.path, 'app');
+      Directory(packageDir).createSync(recursive: true);
+      Directory(appDir).createSync(recursive: true);
+      wrapCalls = [];
+    });
+
+    tearDown(() => root.deleteSync(recursive: true));
+
+    /// A zip shaped like `libtypst_flutter_ios.xcframework.zip`.
+    List<int> iosZip() {
+      final archive = Archive();
+      for (final name in const [
+        'typst_flutter.xcframework/Info.plist',
+        'typst_flutter.xcframework/ios-arm64/libtypst_flutter.a',
+      ]) {
+        final bytes = utf8.encode(name);
+        archive.addFile(ArchiveFile(name, bytes.length, bytes));
+      }
+      return ZipEncoder().encode(archive)!;
+    }
+
+    Future<http.Response> fakeGet(Uri url) async {
+      if (url.path.endsWith('SHA256SUMS')) return http.Response('', 200);
+      if (url.path.endsWith('libtypst_flutter_ios.xcframework.zip')) {
+        return http.Response.bytes(iosZip(), 200);
+      }
+      if (url.path.endsWith('libtypst_flutter_macos.a')) {
+        return http.Response.bytes(utf8.encode('staticlib'), 200);
+      }
+      return http.Response('not found', 404);
+    }
+
+    SetupRunner runner([List<String> extraArgs = const []]) => SetupRunner(
+      SetupOptions.parse(['--version', '9.9.9', '--no-verify', ...extraArgs]),
+      httpGet: fakeGet,
+      packageRoot: packageDir,
+      hostPlatform: 'macos',
+      workingDirectory: appDir,
+      createXcframework: ({required library, required output}) async =>
+          wrapCalls.add((library: library, output: output)),
+    );
+
+    void writeStamp(String version) {
+      final stamp = File(
+        p.join(packageDir, '.typst_flutter_prebuilt', '.version'),
+      )..createSync(recursive: true);
+      stamp.writeAsStringSync(version);
+    }
+
+    test('unpacks the iOS xcframework inside the iOS SPM package', () async {
+      await runner().run();
+      expect(
+        File(
+          p.join(
+            packageDir,
+            'ios/typst_flutter/Binaries/typst_flutter.xcframework/Info.plist',
+          ),
+        ).existsSync(),
+        isTrue,
+      );
+      expect(
+        Directory(p.join(appDir, 'ios')).existsSync(),
+        isFalse,
+        reason: 'setup must write into the package, not the app that ran it',
+      );
+    });
+
+    test('wraps the macOS static library into the macOS SPM package', () async {
+      await runner().run();
+      expect(wrapCalls, hasLength(1));
+      expect(
+        wrapCalls.single.library,
+        p.join(packageDir, '.typst_flutter_prebuilt/macos/libtypst_flutter.a'),
+      );
+      expect(
+        wrapCalls.single.output,
+        p.join(
+          packageDir,
+          'macos/typst_flutter/Binaries/typst_flutter.xcframework',
+        ),
+      );
+    });
+
+    test('re-running with --force replaces instead of nesting', () async {
+      await runner().run();
+      await runner(['--force']).run();
+      final binDir = Directory(
+        p.join(packageDir, 'ios/typst_flutter/Binaries'),
+      );
+      expect(
+        binDir.listSync().map((e) => p.basename(e.path)).toList(),
+        ['typst_flutter.xcframework'],
+        reason:
+            'a second run must not create '
+            'typst_flutter.xcframework/typst_flutter.xcframework',
+      );
+    });
+
+    test('a current stamp without the Apple xcframeworks reinstalls', () async {
+      writeStamp('9.9.9');
+
+      await runner().run();
+      expect(
+        wrapCalls,
+        hasLength(1),
+        reason: 'a stamp alone must not skip the Apple install',
+      );
+    });
+
+    test('a matching stamp with both xcframeworks present is up to date', () async {
+      Directory(
+        p.join(
+          packageDir,
+          'ios/typst_flutter/Binaries/typst_flutter.xcframework',
+        ),
+      ).createSync(recursive: true);
+      Directory(
+        p.join(
+          packageDir,
+          'macos/typst_flutter/Binaries/typst_flutter.xcframework',
+        ),
+      ).createSync(recursive: true);
+      writeStamp('9.9.9');
+
+      await runner().run();
+      expect(wrapCalls, isEmpty);
+    });
+
+    test('a non-macOS host never asks for Apple artifacts', () async {
+      final linuxRunner = SetupRunner(
+        SetupOptions.parse(['--version', '9.9.9', '--no-verify']),
+        httpGet: fakeGet,
+        packageRoot: packageDir,
+        hostPlatform: 'linux',
+        createXcframework: ({required library, required output}) async =>
+            wrapCalls.add((library: library, output: output)),
+      );
+      await linuxRunner.run();
+      expect(wrapCalls, isEmpty);
+      expect(Directory(p.join(packageDir, 'ios')).existsSync(), isFalse);
     });
   });
 }
