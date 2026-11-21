@@ -350,7 +350,7 @@ repository: https://github.com/muhleder/typst_flutter
         final bytes = utf8.encode(name);
         archive.addFile(ArchiveFile(name, bytes.length, bytes));
       }
-      return ZipEncoder().encode(archive)!;
+      return ZipEncoder().encode(archive);
     }
 
     Future<http.Response> fakeGet(Uri url) async {
@@ -375,10 +375,11 @@ repository: https://github.com/muhleder/typst_flutter
     );
 
     void writeStamp(String version) {
-      final stamp = File(
+      File(
         p.join(packageDir, '.typst_flutter_prebuilt', '.version'),
-      )..createSync(recursive: true);
-      stamp.writeAsStringSync(version);
+      )
+        ..createSync(recursive: true)
+        ..writeAsStringSync(version);
     }
 
     test('unpacks the iOS xcframework inside the iOS SPM package', () async {
@@ -441,7 +442,7 @@ repository: https://github.com/muhleder/typst_flutter
       );
     });
 
-    test('a matching stamp with both xcframeworks present is up to date', () async {
+    test('a matching stamp with both xcframeworks is up to date', () async {
       Directory(
         p.join(
           packageDir,
