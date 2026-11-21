@@ -110,6 +110,16 @@ jobs:
         run: just build-ios-local
       - name: Build the example for the simulator
         run: cd example && flutter build ios --simulator
+      - name: Build the example for a device and check the Rust symbols
+        run: |
+          cd example
+          flutter build ios --no-codesign
+          # A release link runs -dead_strip; the SwiftPM linker settings must
+          # keep every frb_* symbol in the dynamic table, or the app builds and
+          # then dies on the first dlsym.
+          count=$(nm -g build/ios/iphoneos/Runner.app/Runner | grep -c '_frb_')
+          echo "Rust symbols exported by the app binary: $count"
+          test "$count" -ge 10
 
 
   rust-test:

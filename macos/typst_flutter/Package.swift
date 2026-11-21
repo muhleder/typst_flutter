@@ -31,7 +31,16 @@ let package = Package(
                 // DynamicLibrary.process(), and the Rust crate is a single
                 // codegen unit under fat LTO, so forcing this one symbol keeps
                 // every frb_* entry point (and all of Typst) in the app binary.
-                .unsafeFlags(["-Wl,-u", "-Wl,_frb_get_rust_content_hash"]),
+                .unsafeFlags([
+                    // Keep the one Rust object alive: fat LTO + codegen-units=1
+                    // means it holds every frb_* entry point and all of Typst.
+                    "-Wl,-u", "-Wl,_frb_get_rust_content_hash",
+                    // Release links run with -dead_strip, which drops global
+                    // symbols nothing references — and flutter_rust_bridge
+                    // looks them up by name at runtime. Without this the app
+                    // builds and then fails on the first dlsym.
+                    "-Wl,-export_dynamic",
+                ]),
             ]
         ),
         .binaryTarget(
